@@ -4,23 +4,46 @@
 
 <section class="panel">
     <header>
-        <h2>اضافه‌کردن محصول/دسته جدید</h2>
-        <p class="muted">از این بخش می‌توانید منوهای ربات را تا بینهایت سطح بسازید.</p>
+        <h2>ایجاد دسته جدید</h2>
+        <p class="muted">دسته‌ها فقط برای چیدمان هستند و همیشه فعال می‌مانند.</p>
     </header>
     <form method="post" action="{{ url_for('products_create') }}" class="grid form-grid">
+        <input type="hidden" name="type" value="category">
         <label>
-            نام
+            نام دسته
             <input type="text" name="title" required placeholder="مثلاً خدمات جدید">
         </label>
         <label>
-            نوع
-            <select name="type">
-                <option value="product">محصول/خدمت</option>
-                <option value="category">دسته‌بندی</option>
+            والد (فقط دسته)
+            <select name="parent_id">
+                {% for p in parents %}
+                <option value="{{ p.id }}">{{ p.title }}</option>
+                {% endfor %}
             </select>
         </label>
         <label>
-            والد
+            ترتیب نمایش
+            <input type="number" name="sort_order" value="0" min="0">
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary">ایجاد دسته</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <header>
+        <h2>ایجاد محصول/خدمت جدید</h2>
+        <p class="muted">محصولات می‌توانند درخواست‌محور یا دارای حالت اکانت باشند.</p>
+    </header>
+    <form method="post" action="{{ url_for('products_create') }}" class="grid form-grid">
+        <input type="hidden" name="type" value="product">
+        <label>
+            نام محصول
+            <input type="text" name="title" required placeholder="مثلاً سرویس جدید">
+        </label>
+        <label>
+            والد (فقط دسته)
             <select name="parent_id">
                 {% for p in parents %}
                 <option value="{{ p.id }}">{{ p.title }}</option>
@@ -32,19 +55,55 @@
             <input type="number" name="sort_order" value="0" min="0">
         </label>
         <label>
-            قیمت ({{ currency }})
+            قیمت پایه ({{ currency }})
             <input type="number" name="price" value="0" min="0" step="1000">
         </label>
         <label class="checkbox">
             <input type="checkbox" name="available" checked>
             موجود باشد
         </label>
+        <label class="checkbox">
+            <input type="checkbox" name="request_only">
+            فقط ثبت درخواست (بدون قیمت)
+        </label>
+        <label class="checkbox">
+            <input type="checkbox" name="account_enabled">
+            دارای انتخاب اکانت باشد
+        </label>
+        <div class="inline-fields span">
+            <label class="checkbox">
+                <input type="checkbox" name="self_available">
+                روی اکانت خودم فعال باشد
+            </label>
+            <label>
+                قیمت روی اکانت خودم
+                <input type="number" name="self_price" value="0" min="0" step="1000">
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" name="pre_available">
+                اکانت از پیش ساخته شده فعال باشد
+            </label>
+            <label>
+                قیمت اکانت آماده
+                <input type="number" name="pre_price" value="0" min="0" step="1000">
+            </label>
+        </div>
+        <div class="inline-fields span">
+            <label class="checkbox">
+                <input type="checkbox" name="require_username">
+                گرفتن یوزر
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" name="require_password">
+                گرفتن پسورد
+            </label>
+        </div>
         <label class="full">
             توضیحات
             <textarea name="description" rows="2" placeholder="توضیح کوتاه برای صفحهٔ محصول"></textarea>
         </label>
         <div class="form-actions">
-            <button type="submit" class="btn-primary">ایجاد</button>
+            <button type="submit" class="btn-primary">ایجاد محصول</button>
         </div>
     </form>
 </section>
@@ -54,75 +113,113 @@
         <h2>فهرست کامل محصولات و دسته‌ها</h2>
         <p class="muted">قیمت‌ها بر حسب {{ currency }} هستند. هر ردیف قابل ویرایش مستقیم است.</p>
     </header>
-    <table class="products-table">
-        <thead>
-            <tr>
-                <th>عنوان</th>
-                <th>نوع/چیدمان</th>
-                <th>قیمت و موجودی</th>
-                <th>والد</th>
-                <th>توضیحات</th>
-                <th>عملیات</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in products %}
-            <tr>
-                <td>
-                    <div class="tree-title" style="--depth: {{ item.depth }};">
-                        <span class="node-tag {{ 'category' if item.is_category else 'product' }}">{{ '📂' if item.is_category else '🛍️' }}</span>
-                        <input type="text" form="edit-{{ item.id }}" name="title" value="{{ item.title }}" required>
-                        <div class="path muted">{{ item.path_display }}</div>
-                    </div>
-                </td>
-                <td>
-                    <div class="inline-fields">
-                        <label>
-                            نوع
-                            <select name="type" form="edit-{{ item.id }}">
-                                <option value="product" {% if not item.is_category %}selected{% endif %}>محصول</option>
-                                <option value="category" {% if item.is_category %}selected{% endif %}>دسته</option>
-                            </select>
-                        </label>
-                        <label>
-                            ترتیب
-                            <input type="number" name="sort_order" form="edit-{{ item.id }}" value="{{ item.sort_order or 0 }}" min="0">
-                        </label>
-                    </div>
-                </td>
-                <td>
-                    <div class="inline-fields">
-                        <label>قیمت
-                            <input type="number" name="price" form="edit-{{ item.id }}" value="{{ item.price }}" min="0" step="1000" {% if item.is_category %}disabled{% endif %}>
-                        </label>
-                        <label class="checkbox">
-                            <input type="checkbox" name="available" form="edit-{{ item.id }}" {% if item.available %}checked{% endif %} {% if item.is_category %}disabled{% endif %}>
-                            فعال
-                        </label>
-                    </div>
-                </td>
-                <td>
-                    <select name="parent_id" form="edit-{{ item.id }}">
-                        {% for p in parents %}
-                        <option value="{{ p.id }}" {% if (item.parent_id or 0) == p.id %}selected{% endif %}>{{ p.title }}</option>
-                        {% endfor %}
-                    </select>
-                </td>
-                <td>
-                    <textarea name="description" form="edit-{{ item.id }}" rows="2">{{ item.description }}</textarea>
-                </td>
-                <td class="actions">
-                    <form method="post" action="{{ url_for('products_update', product_id=item.id) }}" id="edit-{{ item.id }}" class="inline-form"></form>
-                    <button type="submit" form="edit-{{ item.id }}" class="btn-primary">ذخیره</button>
-                    <form method="post" action="{{ url_for('products_delete', product_id=item.id) }}" class="inline-form" onsubmit="return confirm('حذف این مورد؟ زیرمجموعه‌ها نیز حذف می‌شوند.');">
-                        <button type="submit" class="btn-danger">حذف</button>
-                    </form>
-                </td>
-            </tr>
-            {% else %}
-            <tr><td colspan="6" class="empty">هنوز محصولی ثبت نشده است.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <form method="post" action="{{ url_for('products_bulk_update') }}" id="bulk-form">
+        <table class="products-table">
+            <thead>
+                <tr>
+                    <th>عنوان</th>
+                    <th>چیدمان</th>
+                    <th>گزینه‌ها</th>
+                    <th>والد</th>
+                    <th>توضیحات</th>
+                    <th>عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in products %}
+                <tr>
+                    <td>
+                        <div class="tree-title" style="--depth: {{ item.depth }};">
+                            <span class="node-tag {{ 'category' if item.is_category else 'product' }}">{{ '📂' if item.is_category else '🛍️' }}</span>
+                            <input type="hidden" name="is_category-{{ item.id }}" value="{{ 1 if item.is_category else 0 }}">
+                            <input type="text" name="title-{{ item.id }}" value="{{ item.title }}" required>
+                            <div class="path muted">{{ item.path_display }}</div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="inline-fields">
+                            <label>
+                                ترتیب
+                                <input type="number" name="sort_order-{{ item.id }}" value="{{ item.sort_order or 0 }}" min="0">
+                            </label>
+                            <p class="muted">نوع: {{ 'دسته' if item.is_category else 'محصول' }}</p>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="stack">
+                            <div class="inline-fields">
+                                <label>قیمت پایه
+                                    <input type="number" name="price-{{ item.id }}" value="{{ item.price }}" min="0" step="1000" {% if item.is_category %}disabled{% endif %}>
+                                </label>
+                                <label class="checkbox">
+                                    <input type="checkbox" name="available-{{ item.id }}" {% if item.available %}checked{% endif %} {% if item.is_category %}disabled{% endif %}>
+                                    فعال
+                                </label>
+                            </div>
+                            {% if not item.is_category %}
+                            <div class="inline-fields">
+                                <label class="checkbox">
+                                    <input type="checkbox" name="request_only-{{ item.id }}" {% if item.request_only %}checked{% endif %}>
+                                    فقط ثبت درخواست
+                                </label>
+                                <label class="checkbox">
+                                    <input type="checkbox" name="account_enabled-{{ item.id }}" {% if item.account_enabled %}checked{% endif %}>
+                                    انتخاب اکانت
+                                </label>
+                            </div>
+                            <div class="inline-fields">
+                                <label class="checkbox">
+                                    <input type="checkbox" name="self_available-{{ item.id }}" {% if item.self_available %}checked{% endif %}>
+                                    روی اکانت خودم
+                                </label>
+                                <label>
+                                    قیمت خودم
+                                    <input type="number" name="self_price-{{ item.id }}" value="{{ item.self_price }}" min="0" step="1000">
+                                </label>
+                                <label class="checkbox">
+                                    <input type="checkbox" name="pre_available-{{ item.id }}" {% if item.pre_available %}checked{% endif %}>
+                                    اکانت آماده
+                                </label>
+                                <label>
+                                    قیمت آماده
+                                    <input type="number" name="pre_price-{{ item.id }}" value="{{ item.pre_price }}" min="0" step="1000">
+                                </label>
+                            </div>
+                            <div class="inline-fields">
+                                <label class="checkbox">
+                                    <input type="checkbox" name="require_username-{{ item.id }}" {% if item.require_username %}checked{% endif %}>
+                                    گرفتن یوزر
+                                </label>
+                                <label class="checkbox">
+                                    <input type="checkbox" name="require_password-{{ item.id }}" {% if item.require_password %}checked{% endif %}>
+                                    گرفتن پسورد
+                                </label>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <select name="parent_id-{{ item.id }}">
+                            {% for p in parents %}
+                            <option value="{{ p.id }}" {% if (item.parent_id or 0) == p.id %}selected{% endif %}>{{ p.title }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    <td>
+                        <textarea name="description-{{ item.id }}" rows="2">{{ item.description }}</textarea>
+                    </td>
+                    <td class="actions">
+                        <button type="submit" class="btn-danger" formnovalidate formaction="{{ url_for('products_delete', product_id=item.id) }}" onclick="return confirm('حذف این مورد؟ زیرمجموعه‌ها نیز حذف می‌شوند.');">حذف</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="empty">هنوز محصولی ثبت نشده است.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary">تایید کلی</button>
+        </div>
+    </form>
 </section>
 {% endblock %}

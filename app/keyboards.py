@@ -113,9 +113,26 @@ def ik_dynamic_products(items: list[dict], parent_id: int | None = None) -> Inli
     return builder.as_markup()
 
 
-def ik_product_actions(product_id: int, parent_id: int | None) -> InlineKeyboardMarkup:
+def ik_product_actions(product: dict, parent_id: int | None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="🛒 افزودن به سبد", callback_data=f"prod:buy:{product_id}")
+    pid = product.get("id")
+    if product.get("request_only"):
+        builder.button(text="📝 ثبت درخواست", callback_data=f"prod:req:{pid}")
+    elif product.get("account_enabled"):
+        self_label = "روی اکانت خودم"
+        pre_label = "اکانت آماده"
+        if product.get("self_available"):
+            self_label = f"✅ {self_label}"
+        else:
+            self_label = f"⛔️ {self_label}"
+        if product.get("pre_available"):
+            pre_label = f"✅ {pre_label}"
+        else:
+            pre_label = f"⛔️ {pre_label}"
+        builder.button(text=self_label, callback_data=f"prod:mode:self:{pid}")
+        builder.button(text=pre_label, callback_data=f"prod:mode:pre:{pid}")
+    else:
+        builder.button(text="🛒 افزودن به سبد", callback_data=f"prod:buy:{pid}")
     back_target = parent_id or 0
     builder.button(text="🔙 بازگشت", callback_data=f"prod:open:{back_target}")
     builder.adjust(1)

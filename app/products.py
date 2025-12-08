@@ -17,7 +17,15 @@ def _normalize_item(raw: dict) -> dict:
     item = dict(raw)
     item["available"] = bool(item.get("available"))
     item["is_category"] = bool(item.get("is_category"))
+    item["request_only"] = bool(item.get("request_only"))
+    item["account_enabled"] = bool(item.get("account_enabled"))
+    item["self_available"] = bool(item.get("self_available"))
+    item["pre_available"] = bool(item.get("pre_available"))
+    item["require_username"] = bool(item.get("require_username"))
+    item["require_password"] = bool(item.get("require_password"))
     item["price"] = int(item.get("price") or 0)
+    item["self_price"] = int(item.get("self_price") or 0)
+    item["pre_price"] = int(item.get("pre_price") or 0)
     return item
 
 
@@ -81,7 +89,12 @@ def list_public_children(parent_id: int | None = None) -> list[dict]:
                 child = {**child, "has_children": True}
                 visible.append(child)
         else:
-            if child["available"]:
+            option_available = child["available"]
+            if child.get("account_enabled"):
+                option_available = child.get("self_available") or child.get("pre_available")
+            if child.get("request_only"):
+                option_available = True
+            if option_available:
                 visible.append(child)
     return visible
 
@@ -93,6 +106,11 @@ def find_public_product(product_id: int) -> dict | None:
     normalized = _normalize_item(item)
     if normalized["is_category"]:
         return normalized
-    if not normalized["available"]:
+    option_available = normalized.get("available")
+    if normalized.get("account_enabled"):
+        option_available = normalized.get("self_available") or normalized.get("pre_available")
+    if normalized.get("request_only"):
+        option_available = True
+    if not option_available:
         return None
     return normalized

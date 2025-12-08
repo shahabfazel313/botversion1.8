@@ -49,6 +49,14 @@
             <p>{{ account_mode_label }}</p>
         </div>
         <div>
+            <strong>گرفتن یوزر</strong>
+            <p>{{ 'بله' if order.require_username else 'خیر' }}</p>
+        </div>
+        <div>
+            <strong>گرفتن پسورد</strong>
+            <p>{{ 'بله' if order.require_password else 'خیر' }}</p>
+        </div>
+        <div>
             <strong>رمز اکانت (در صورت ارائه)</strong>
             <p>
                 {% if order.customer_secret_encrypted %}
@@ -57,6 +65,14 @@
                 —
                 {% endif %}
             </p>
+        </div>
+        <div>
+            <strong>یوزرنیم ارسال شده</strong>
+            <p>{{ order.customer_username or '—' }}</p>
+        </div>
+        <div>
+            <strong>پسورد ارسال شده</strong>
+            <p>{{ order.customer_password or '—' }}</p>
         </div>
         <div class="span">
             <strong>یادداشت سفارش / تحویل</strong>
