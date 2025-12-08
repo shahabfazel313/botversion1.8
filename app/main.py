@@ -5,6 +5,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.types import BotCommand, BotCommandScopeDefault, MenuButtonCommands
 from .config import BOT_TOKEN, DEFAULT_BOT_PROPS
 from .db import init_db, expire_orders_and_refund
+from .products import seed_default_catalog
 from .public import router as public_router
 from .admin import router as admin_router
 
@@ -42,6 +43,7 @@ async def expire_loop(bot: Bot):
 
 async def main():
     init_db()
+    seed_default_catalog()
     bot = Bot(BOT_TOKEN, default=DEFAULT_BOT_PROPS)
     dp = Dispatcher()
     dp.include_router(public_router)

@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from ..catalog import list_admin_rows, set_variant_settings
+from ..products import get_admin_tree, seed_default_catalog
 from ..config import ADMIN_WEB_PASS, ADMIN_WEB_SECRET, ADMIN_WEB_USER, BOT_TOKEN, CURRENCY
 from ..db import (
     ORDER_STATUS_LABELS,
@@ -52,13 +52,18 @@ from ..db import (
     add_order_manager_message,
     add_user_manager_message,
     create_coupon,
+    create_product,
+    get_product,
+    delete_product,
     get_coupon,
     list_coupons,
     list_coupon_redemptions,
     set_coupon_active,
     list_order_manager_messages,
     list_user_manager_messages,
+    update_product,
     set_order_financials,
+    has_sort_conflict,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -195,6 +200,7 @@ def create_admin_app() -> FastAPI:
     @app.on_event("startup")
     async def _startup() -> None:  # pragma: no cover - io side effect
         init_db()
+        seed_default_catalog()
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:  # pragma: no cover - io side effect
@@ -332,29 +338,356 @@ def create_admin_app() -> FastAPI:
 
     @app.get("/products", name="products_page")
     async def products_page(request: Request, user: str = Depends(_login_required)):
-        rows = list_admin_rows()
+        items = get_admin_tree()
+        parent_options = [{"id": 0, "title": "(بدون والد)"}] + [
+            {"id": row["id"], "title": row["path_display"] or row["title"]}
+            for row in items
+            if row.get("is_category")
+        ]
         return _render(
             request,
             "products.html",
             {
                 "title": "مدیریت محصولات",
-                "products": rows,
+                "products": items,
+                "parents": parent_options,
                 "currency": CURRENCY,
                 "nav": "products",
             },
         )
 
-    @app.post("/products")
-    async def products_update(request: Request, user: str = Depends(_login_required)):
+    @app.post("/products/create")
+    async def products_create(request: Request, user: str = Depends(_login_required)):
         form = await request.form()
-        rows = list_admin_rows()
-        for row in rows:
-            for variant in row["variants"]:
-                code = variant["code"]
-                price_value = str(form.get(f"price_{code}", "0")).strip()
-                available = form.get(f"avail_{code}") == "on"
-                set_variant_settings(code, price_value or "0", available)
-        _flash(request, "تغییرات محصولات ذخیره شد.")
+        title = (form.get("title") or "").strip()
+        node_type = (form.get("type") or "product").lower()
+        parent_raw = form.get("parent_id")
+        parent_id = int(parent_raw) if parent_raw not in (None, "", "0") else None
+        try:
+            sort_order = int(form.get("sort_order") or 0)
+        except ValueError:
+            sort_order = 0
+        description = (form.get("description") or "").strip()
+        try:
+            price_val = int(form.get("price") or 0)
+        except ValueError:
+            price_val = 0
+        available = form.get("available") == "on"
+        is_category = node_type == "category"
+        request_only = form.get("request_only") == "on"
+        account_enabled = form.get("account_enabled") == "on"
+        self_available = form.get("self_available") == "on"
+        pre_available = form.get("pre_available") == "on"
+        try:
+            self_price = int(form.get("self_price") or 0)
+        except ValueError:
+            self_price = 0
+        try:
+            pre_price = int(form.get("pre_price") or 0)
+        except ValueError:
+            pre_price = 0
+        require_username = form.get("require_username") == "on"
+        require_password = form.get("require_password") == "on"
+
+        if not title:
+            _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
+            return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+        if parent_id:
+            parent = get_product(parent_id)
+            if not parent or not parent.get("is_category"):
+                _flash(request, "والد باید یک دسته باشد.", "error")
+                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+        if is_category:
+            price_val = 0
+            available = True
+            request_only = False
+            account_enabled = False
+            self_available = False
+            pre_available = False
+            self_price = 0
+            pre_price = 0
+        if request_only:
+            price_val = 0
+            available = True
+            account_enabled = False
+            self_available = False
+            pre_available = False
+            self_price = 0
+            pre_price = 0
+
+        if has_sort_conflict(
+            parent_id=parent_id, is_category=is_category, sort_order=sort_order, exclude_id=None
+        ):
+            _flash(request, "ترتیب انتخابی تکراری است. لطفاً عدد دیگری انتخاب کنید.", "error")
+            return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+        create_product(
+            title,
+            is_category=is_category,
+            parent_id=parent_id,
+            price=price_val,
+            available=available,
+            description=description,
+            request_only=request_only,
+            account_enabled=account_enabled,
+            self_available=self_available,
+            self_price=self_price,
+            pre_available=pre_available,
+            pre_price=pre_price,
+            require_username=require_username,
+            require_password=require_password,
+            sort_order=sort_order,
+        )
+        _flash(request, "محصول/دسته جدید ایجاد شد.")
+        return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.post("/products/{product_id}/update")
+    async def products_update(
+        request: Request,
+        product_id: int,
+        user: str = Depends(_login_required),
+    ):
+        item = get_product(product_id)
+        if not item:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="محصول یافت نشد")
+        form = await request.form()
+        title = (form.get("title") or "").strip()
+        node_type = "category" if item.get("is_category") else "product"
+        parent_raw = form.get("parent_id")
+        parent_id = int(parent_raw) if parent_raw not in (None, "", "0") else None
+        try:
+            sort_order = int(form.get("sort_order") or 0)
+        except ValueError:
+            sort_order = 0
+        description = (form.get("description") or "").strip()
+        try:
+            price_val = int(form.get("price") or 0)
+        except ValueError:
+            price_val = 0
+        available = form.get("available") == "on"
+        is_category = node_type == "category"
+        request_only = form.get("request_only") == "on"
+        account_enabled = form.get("account_enabled") == "on"
+        self_available = form.get("self_available") == "on"
+        pre_available = form.get("pre_available") == "on"
+        require_username = form.get("require_username") == "on"
+        require_password = form.get("require_password") == "on"
+        try:
+            self_price = int(form.get("self_price") or 0)
+        except ValueError:
+            self_price = 0
+        try:
+            pre_price = int(form.get("pre_price") or 0)
+        except ValueError:
+            pre_price = 0
+
+        if not title:
+            _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
+            return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+        if parent_id:
+            parent = get_product(parent_id)
+            if not parent or not parent.get("is_category"):
+                _flash(request, "والد باید یک دسته باشد.", "error")
+                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+        if is_category:
+            price_val = 0
+            available = True
+            request_only = False
+            account_enabled = False
+            self_available = False
+            pre_available = False
+            self_price = 0
+            pre_price = 0
+            require_username = False
+            require_password = False
+        if request_only:
+            price_val = 0
+            available = True
+            account_enabled = False
+            self_available = False
+            pre_available = False
+            self_price = 0
+            pre_price = 0
+
+        if has_sort_conflict(
+            parent_id=parent_id, is_category=is_category, sort_order=sort_order, exclude_id=product_id
+        ):
+            _flash(request, "ترتیب انتخابی تکراری است. لطفاً عدد دیگری انتخاب کنید.", "error")
+            return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+        ok = update_product(
+            product_id,
+            title=title,
+            is_category=is_category,
+            parent_id=parent_id,
+            price=price_val,
+            available=available,
+            description=description,
+            request_only=request_only,
+            account_enabled=account_enabled,
+            self_available=self_available,
+            self_price=self_price,
+            pre_available=pre_available,
+            pre_price=pre_price,
+            require_username=require_username,
+            require_password=require_password,
+            sort_order=sort_order,
+        )
+        if not ok:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="محصول یافت نشد")
+
+        _flash(request, "تغییرات ذخیره شد.")
+        return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.post("/products/{product_id}/delete")
+    async def products_delete(
+        request: Request,
+        product_id: int,
+        user: str = Depends(_login_required),
+    ):
+        if not get_product(product_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="محصول یافت نشد")
+        delete_product(product_id)
+        _flash(request, "محصول/دسته حذف شد.")
+        return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.post("/products/bulk-update")
+    async def products_bulk_update(request: Request, user: str = Depends(_login_required)):
+        form = await request.form()
+        ids: set[int] = set()
+        for key in form.keys():
+            if key.startswith("title-"):
+                try:
+                    ids.add(int(key.split("-", 1)[1]))
+                except ValueError:
+                    continue
+
+        pending: list[dict[str, Any]] = []
+        seen_orders: set[tuple[int | None, bool, int]] = set()
+
+        for pid in ids:
+            item = get_product(pid)
+            if not item:
+                continue
+            is_category = bool(int(form.get(f"is_category-{pid}") or (1 if item.get("is_category") else 0)))
+            title = (form.get(f"title-{pid}") or "").strip()
+            parent_raw = form.get(f"parent_id-{pid}")
+            parent_id = int(parent_raw) if parent_raw not in (None, "", "0") else None
+            try:
+                sort_order = int(form.get(f"sort_order-{pid}") or 0)
+            except ValueError:
+                sort_order = 0
+            description = (form.get(f"description-{pid}") or "").strip()
+            try:
+                price_val = int(form.get(f"price-{pid}") or 0)
+            except ValueError:
+                price_val = 0
+            available = form.get(f"available-{pid}") == "on"
+            request_only = form.get(f"request_only-{pid}") == "on"
+            account_enabled = form.get(f"account_enabled-{pid}") == "on"
+            self_available = form.get(f"self_available-{pid}") == "on"
+            pre_available = form.get(f"pre_available-{pid}") == "on"
+            require_username = form.get(f"require_username-{pid}") == "on"
+            require_password = form.get(f"require_password-{pid}") == "on"
+            try:
+                self_price = int(form.get(f"self_price-{pid}") or 0)
+            except ValueError:
+                self_price = 0
+            try:
+                pre_price = int(form.get(f"pre_price-{pid}") or 0)
+            except ValueError:
+                pre_price = 0
+
+            if not title:
+                _flash(request, f"نام برای ردیف #{pid} خالی است.", "error")
+                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+            if parent_id == pid:
+                _flash(request, "نمی‌توانید والد را خود مورد انتخاب کنید.", "error")
+                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+            if parent_id:
+                parent = get_product(parent_id)
+                if not parent or not parent.get("is_category"):
+                    _flash(request, "والد باید یک دسته باشد.", "error")
+                    return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+            if is_category:
+                price_val = 0
+                available = True
+                request_only = False
+                account_enabled = False
+                self_available = False
+                pre_available = False
+                self_price = 0
+                pre_price = 0
+                require_username = False
+                require_password = False
+            if request_only:
+                price_val = 0
+                available = True
+                account_enabled = False
+                self_available = False
+                pre_available = False
+                self_price = 0
+                pre_price = 0
+
+            signature = (parent_id, is_category, sort_order)
+            if signature in seen_orders:
+                _flash(request, "ترتیب دو مورد در یک سطح نمی‌تواند تکراری باشد.", "error")
+                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+            seen_orders.add(signature)
+
+            if has_sort_conflict(
+                parent_id=parent_id, is_category=is_category, sort_order=sort_order, exclude_id=pid
+            ):
+                _flash(request, "ترتیب انتخابی تکراری است. لطفاً عدد دیگری انتخاب کنید.", "error")
+                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+            pending.append(
+                dict(
+                    pid=pid,
+                    title=title,
+                    parent_id=parent_id,
+                    sort_order=sort_order,
+                    description=description,
+                    price=price_val,
+                    available=available,
+                    request_only=request_only,
+                    account_enabled=account_enabled,
+                    self_available=self_available,
+                    self_price=self_price,
+                    pre_available=pre_available,
+                    pre_price=pre_price,
+                    require_username=require_username,
+                    require_password=require_password,
+                )
+            )
+
+        for payload in pending:
+            update_product(
+                payload["pid"],
+                title=payload["title"],
+                parent_id=payload["parent_id"],
+                price=payload["price"],
+                available=payload["available"],
+                description=payload["description"],
+                request_only=payload["request_only"],
+                account_enabled=payload["account_enabled"],
+                self_available=payload["self_available"],
+                self_price=payload["self_price"],
+                pre_available=payload["pre_available"],
+                pre_price=payload["pre_price"],
+                require_username=payload["require_username"],
+                require_password=payload["require_password"],
+                sort_order=payload["sort_order"],
+            )
+
+        _flash(request, "تمام تغییرات ذخیره شد.")
         return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
 
     @app.get("/orders/{order_id}")
