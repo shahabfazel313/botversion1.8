@@ -99,6 +99,46 @@ def ik_shop_main() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def ik_dynamic_products(items: list[dict], parent_id: int | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for item in items:
+        text = f"{'📂' if item.get('is_category') else '🛍️'} {item.get('title')}"
+        cb = f"prod:open:{item['id']}" if item.get("is_category") else f"prod:view:{item['id']}"
+        builder.button(text=text, callback_data=cb)
+    if parent_id:
+        builder.button(text="⬅️ بازگشت", callback_data=f"prod:open:{parent_id}")
+    else:
+        builder.button(text="🔙 بازگشت", callback_data="prod:root")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def ik_product_actions(product: dict, parent_id: int | None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    pid = product.get("id")
+    if product.get("request_only"):
+        builder.button(text="📝 ثبت درخواست", callback_data=f"prod:req:{pid}")
+    elif product.get("account_enabled"):
+        self_label = "روی اکانت خودم"
+        pre_label = "اکانت آماده"
+        if product.get("self_available"):
+            self_label = f"✅ {self_label}"
+        else:
+            self_label = f"⛔️ {self_label}"
+        if product.get("pre_available"):
+            pre_label = f"✅ {pre_label}"
+        else:
+            pre_label = f"⛔️ {pre_label}"
+        builder.button(text=self_label, callback_data=f"prod:mode:self:{pid}")
+        builder.button(text=pre_label, callback_data=f"prod:mode:pre:{pid}")
+    else:
+        builder.button(text="🛒 افزودن به سبد", callback_data=f"prod:buy:{pid}")
+    back_target = parent_id or 0
+    builder.button(text="🔙 بازگشت", callback_data=f"prod:open:{back_target}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def ik_ai_main() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="اکانت ChatGPT Business", callback_data="ai:team")
@@ -275,6 +315,8 @@ __all__ = [
     "kb_admin_actions",
     "kb_account",
     "ik_shop_main",
+    "ik_dynamic_products",
+    "ik_product_actions",
     "ik_ai_main",
     "ik_ai_buy_modes",
     "ik_ai_confirm_purchase",
