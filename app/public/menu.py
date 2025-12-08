@@ -21,13 +21,6 @@ from ..keyboards import (
 )
 
 
-@router.message(F.text == REPLY_BTN_PRODUCTS)
-async def on_reply_products(message: Message, state: FSMContext) -> None:
-    if not await ensure_member_for_message(message):
-        return
-    await message.answer("به بخش خرید خوش آمدید:", reply_markup=ik_shop_main())
-
-
 @router.message(F.text == REPLY_BTN_CART)
 async def on_reply_cart(message: Message, state: FSMContext) -> None:
     if not await ensure_member_for_message(message):

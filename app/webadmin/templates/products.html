@@ -1,48 +1,128 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>مدیریت محصولات</h1>
-<form method="post">
-    <section class="panel">
-        <header>
-            <h2>فهرست محصولات</h2>
-            <p class="muted">قیمت‌ها بر حسب {{ currency }} هستند.</p>
-        </header>
-        <table>
-            <thead>
-                <tr>
-                    <th>محصول</th>
-                    <th>تنظیمات</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in products %}
-                <tr>
-                    <td>{{ item.title }}</td>
-                    <td>
-                        {% for variant in item.variants %}
-                        <div class="product-variant">
-                            <div class="variant-title">{{ variant.display_name }}</div>
-                            <div class="variant-controls">
-                                <label>قیمت ({{ currency }})
-                                    <input type="number" name="price_{{ variant.code }}" value="{{ variant.amount }}" min="0" step="1000">
-                                </label>
-                                <label class="checkbox">
-                                    <input type="checkbox" name="avail_{{ variant.code }}" {% if variant.available %}checked{% endif %}>
-                                    موجود
-                                </label>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </td>
-                </tr>
-                {% else %}
-                <tr><td colspan="2" class="empty">هیچ محصولی برای نمایش وجود ندارد.</td></tr>
+
+<section class="panel">
+    <header>
+        <h2>اضافه‌کردن محصول/دسته جدید</h2>
+        <p class="muted">از این بخش می‌توانید منوهای ربات را تا بینهایت سطح بسازید.</p>
+    </header>
+    <form method="post" action="{{ url_for('products_create') }}" class="grid form-grid">
+        <label>
+            نام
+            <input type="text" name="title" required placeholder="مثلاً خدمات جدید">
+        </label>
+        <label>
+            نوع
+            <select name="type">
+                <option value="product">محصول/خدمت</option>
+                <option value="category">دسته‌بندی</option>
+            </select>
+        </label>
+        <label>
+            والد
+            <select name="parent_id">
+                {% for p in parents %}
+                <option value="{{ p.id }}">{{ p.title }}</option>
                 {% endfor %}
-            </tbody>
-        </table>
-        <footer class="panel-footer">
-            <button type="submit" class="btn-primary">ذخیره تغییرات</button>
-        </footer>
-    </section>
-</form>
+            </select>
+        </label>
+        <label>
+            ترتیب نمایش
+            <input type="number" name="sort_order" value="0" min="0">
+        </label>
+        <label>
+            قیمت ({{ currency }})
+            <input type="number" name="price" value="0" min="0" step="1000">
+        </label>
+        <label class="checkbox">
+            <input type="checkbox" name="available" checked>
+            موجود باشد
+        </label>
+        <label class="full">
+            توضیحات
+            <textarea name="description" rows="2" placeholder="توضیح کوتاه برای صفحهٔ محصول"></textarea>
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary">ایجاد</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <header>
+        <h2>فهرست کامل محصولات و دسته‌ها</h2>
+        <p class="muted">قیمت‌ها بر حسب {{ currency }} هستند. هر ردیف قابل ویرایش مستقیم است.</p>
+    </header>
+    <table class="products-table">
+        <thead>
+            <tr>
+                <th>عنوان</th>
+                <th>نوع/چیدمان</th>
+                <th>قیمت و موجودی</th>
+                <th>والد</th>
+                <th>توضیحات</th>
+                <th>عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in products %}
+            <tr>
+                <td>
+                    <div class="tree-title" style="--depth: {{ item.depth }};">
+                        <span class="node-tag {{ 'category' if item.is_category else 'product' }}">{{ '📂' if item.is_category else '🛍️' }}</span>
+                        <input type="text" form="edit-{{ item.id }}" name="title" value="{{ item.title }}" required>
+                        <div class="path muted">{{ item.path_display }}</div>
+                    </div>
+                </td>
+                <td>
+                    <div class="inline-fields">
+                        <label>
+                            نوع
+                            <select name="type" form="edit-{{ item.id }}">
+                                <option value="product" {% if not item.is_category %}selected{% endif %}>محصول</option>
+                                <option value="category" {% if item.is_category %}selected{% endif %}>دسته</option>
+                            </select>
+                        </label>
+                        <label>
+                            ترتیب
+                            <input type="number" name="sort_order" form="edit-{{ item.id }}" value="{{ item.sort_order or 0 }}" min="0">
+                        </label>
+                    </div>
+                </td>
+                <td>
+                    <div class="inline-fields">
+                        <label>قیمت
+                            <input type="number" name="price" form="edit-{{ item.id }}" value="{{ item.price }}" min="0" step="1000" {% if item.is_category %}disabled{% endif %}>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" name="available" form="edit-{{ item.id }}" {% if item.available %}checked{% endif %} {% if item.is_category %}disabled{% endif %}>
+                            فعال
+                        </label>
+                    </div>
+                </td>
+                <td>
+                    <select name="parent_id" form="edit-{{ item.id }}">
+                        {% for p in parents %}
+                        <option value="{{ p.id }}" {% if (item.parent_id or 0) == p.id %}selected{% endif %}>{{ p.title }}</option>
+                        {% endfor %}
+                    </select>
+                </td>
+                <td>
+                    <textarea name="description" form="edit-{{ item.id }}" rows="2">{{ item.description }}</textarea>
+                </td>
+                <td class="actions">
+                    <form method="post" action="{{ url_for('products_update', product_id=item.id) }}" id="edit-{{ item.id }}" class="inline-form"></form>
+                    <button type="submit" form="edit-{{ item.id }}" class="btn-primary">ذخیره</button>
+                    <form method="post" action="{{ url_for('products_delete', product_id=item.id) }}" class="inline-form" onsubmit="return confirm('حذف این مورد؟ زیرمجموعه‌ها نیز حذف می‌شوند.');">
+                        <button type="submit" class="btn-danger">حذف</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="empty">هنوز محصولی ثبت نشده است.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
 {% endblock %}
