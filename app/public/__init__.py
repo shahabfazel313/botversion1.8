@@ -8,6 +8,7 @@ from . import menu  # noqa: F401
 from . import shop_ai  # noqa: F401
 from . import shop_tg  # noqa: F401
 from . import services  # noqa: F401
+from . import products_dynamic  # noqa: F401
 from . import verification  # noqa: F401
 from . import cart  # noqa: F401
 from . import history  # noqa: F401

@@ -413,6 +413,59 @@ table td a.link {
     font-family: inherit;
 }
 
+.products-table input[type="text"],
+.products-table textarea {
+    width: 100%;
+}
+
+.products-table .actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.inline-form {
+    display: inline;
+}
+
+.tree-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-right: calc(var(--depth, 0) * 12px);
+}
+
+.tree-title .path {
+    font-size: 0.8rem;
+    margin-top: 0.2rem;
+}
+
+.node-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--surface-alt);
+    border: 1px solid var(--border-color);
+}
+
+.node-tag.category { color: var(--text-muted); }
+.node-tag.product { color: var(--accent); }
+
+.inline-fields {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.inline-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
 .form-inline {
     display: flex;
     flex-wrap: wrap;
