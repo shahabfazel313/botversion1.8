@@ -393,13 +393,8 @@ def create_admin_app() -> FastAPI:
             _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
             return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
 
-        if parent_id:
-            parent = get_product(parent_id)
-            if not parent or not parent.get("is_category"):
-                _flash(request, "والد باید یک دسته باشد.", "error")
-                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
-
         if is_category:
+            parent_id = None
             price_val = 0
             available = True
             request_only = False
@@ -408,6 +403,11 @@ def create_admin_app() -> FastAPI:
             pre_available = False
             self_price = 0
             pre_price = 0
+        elif parent_id:
+            parent = get_product(parent_id)
+            if not parent or not parent.get("is_category"):
+                _flash(request, "والد باید یک دسته باشد.", "error")
+                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
         if request_only:
             price_val = 0
             available = True
@@ -487,13 +487,8 @@ def create_admin_app() -> FastAPI:
             _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
             return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
 
-        if parent_id:
-            parent = get_product(parent_id)
-            if not parent or not parent.get("is_category"):
-                _flash(request, "والد باید یک دسته باشد.", "error")
-                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
-
         if is_category:
+            parent_id = None
             price_val = 0
             available = True
             request_only = False
@@ -504,6 +499,11 @@ def create_admin_app() -> FastAPI:
             pre_price = 0
             require_username = False
             require_password = False
+        elif parent_id:
+            parent = get_product(parent_id)
+            if not parent or not parent.get("is_category"):
+                _flash(request, "والد باید یک دسته باشد.", "error")
+                return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
         if request_only:
             price_val = 0
             available = True
@@ -610,13 +610,8 @@ def create_admin_app() -> FastAPI:
                 _flash(request, "نمی‌توانید والد را خود مورد انتخاب کنید.", "error")
                 return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
 
-            if parent_id:
-                parent = get_product(parent_id)
-                if not parent or not parent.get("is_category"):
-                    _flash(request, "والد باید یک دسته باشد.", "error")
-                    return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
-
             if is_category:
+                parent_id = None
                 price_val = 0
                 available = True
                 request_only = False
@@ -627,6 +622,11 @@ def create_admin_app() -> FastAPI:
                 pre_price = 0
                 require_username = False
                 require_password = False
+            elif parent_id:
+                parent = get_product(parent_id)
+                if not parent or not parent.get("is_category"):
+                    _flash(request, "والد باید یک دسته باشد.", "error")
+                    return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
             if request_only:
                 price_val = 0
                 available = True

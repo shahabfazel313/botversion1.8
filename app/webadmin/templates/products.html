@@ -14,14 +14,6 @@
             <input type="text" name="title" required placeholder="مثلاً خدمات جدید">
         </label>
         <label>
-            والد (فقط دسته)
-            <select name="parent_id">
-                {% for p in parents %}
-                <option value="{{ p.id }}">{{ p.title }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <label>
             ترتیب نمایش
             <input type="number" name="sort_order" value="0" min="0">
         </label>
@@ -199,11 +191,15 @@
                         </div>
                     </td>
                     <td>
+                        {% if item.is_category %}
+                        <p class="muted">—</p>
+                        {% else %}
                         <select name="parent_id-{{ item.id }}">
                             {% for p in parents %}
                             <option value="{{ p.id }}" {% if (item.parent_id or 0) == p.id %}selected{% endif %}>{{ p.title }}</option>
                             {% endfor %}
                         </select>
+                        {% endif %}
                     </td>
                     <td>
                         <textarea name="description-{{ item.id }}" rows="2">{{ item.description }}</textarea>
