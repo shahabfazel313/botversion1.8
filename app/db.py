@@ -120,6 +120,25 @@ def init_db():
             status TEXT, created_at TEXT, updated_at TEXT
         );
         """)
+        # products catalog
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS products(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                price INTEGER DEFAULT 0,
+                available INTEGER DEFAULT 1,
+                is_category INTEGER DEFAULT 0,
+                sort_order INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_products_parent ON products(parent_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_products_sort ON products(sort_order);")
         # service messages (requests sent from bot)
         cur.execute(
             """
@@ -1103,3 +1122,105 @@ def set_service_message_status(message_id: int, resolved: bool) -> None:
         "UPDATE service_messages SET is_resolved=?, updated_at=? WHERE id=?",
         (1 if resolved else 0, datetime.now().isoformat(timespec="seconds"), message_id),
     )
+
+
+# ====== Products Catalog ======
+
+
+def list_products(parent_id: int | None = None) -> list[dict[str, Any]]:
+    return db_execute(
+        """
+        SELECT * FROM products
+        WHERE COALESCE(parent_id, 0)=COALESCE(?, 0)
+        ORDER BY sort_order ASC, title ASC
+        """,
+        (parent_id,),
+        fetchall=True,
+    )
+
+
+def list_all_products() -> list[dict[str, Any]]:
+    return db_execute("SELECT * FROM products ORDER BY sort_order ASC, title ASC", fetchall=True)
+
+
+def get_product(product_id: int) -> dict[str, Any] | None:
+    return db_execute("SELECT * FROM products WHERE id=?", (product_id,), fetchone=True)
+
+
+def create_product(
+    title: str,
+    *,
+    is_category: bool = False,
+    parent_id: int | None = None,
+    price: int = 0,
+    available: bool = True,
+    description: str = "",
+    sort_order: int = 0,
+) -> int:
+    now = datetime.now().isoformat(timespec="seconds")
+    return db_execute(
+        """
+        INSERT INTO products(parent_id, title, description, price, available, is_category, sort_order, created_at, updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            parent_id,
+            title.strip(),
+            description or "",
+            max(int(price), 0),
+            1 if available else 0,
+            1 if is_category else 0,
+            sort_order,
+            now,
+            now,
+        ),
+        return_lastrowid=True,
+    )
+
+
+def update_product(
+    product_id: int,
+    *,
+    title: str | None = None,
+    is_category: bool | None = None,
+    parent_id: int | None = None,
+    price: int | None = None,
+    available: bool | None = None,
+    description: str | None = None,
+    sort_order: int | None = None,
+) -> bool:
+    current = get_product(product_id)
+    if not current:
+        return False
+    fields = {
+        "title": title if title is not None else current.get("title"),
+        "description": description if description is not None else current.get("description"),
+        "price": max(int(price), 0) if price is not None else int(current.get("price") or 0),
+        "available": 1 if (available if available is not None else current.get("available")) else 0,
+        "is_category": 1 if (is_category if is_category is not None else current.get("is_category")) else 0,
+        "sort_order": sort_order if sort_order is not None else int(current.get("sort_order") or 0),
+        "parent_id": parent_id if parent_id is not None else current.get("parent_id"),
+    }
+    db_execute(
+        """
+        UPDATE products
+        SET title=?, description=?, price=?, available=?, is_category=?, sort_order=?, parent_id=?, updated_at=?
+        WHERE id=?
+        """,
+        (
+            fields["title"],
+            fields["description"],
+            fields["price"],
+            fields["available"],
+            fields["is_category"],
+            fields["sort_order"],
+            fields["parent_id"],
+            datetime.now().isoformat(timespec="seconds"),
+            product_id,
+        ),
+    )
+    return True
+
+
+def delete_product(product_id: int) -> None:
+    db_execute("DELETE FROM products WHERE id=?", (product_id,))

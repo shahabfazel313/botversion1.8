@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from ..catalog import list_admin_rows, set_variant_settings
+from ..products import get_admin_tree, seed_default_catalog
 from ..config import ADMIN_WEB_PASS, ADMIN_WEB_SECRET, ADMIN_WEB_USER, BOT_TOKEN, CURRENCY
 from ..db import (
     ORDER_STATUS_LABELS,
@@ -52,12 +52,15 @@ from ..db import (
     add_order_manager_message,
     add_user_manager_message,
     create_coupon,
+    create_product,
+    delete_product,
     get_coupon,
     list_coupons,
     list_coupon_redemptions,
     set_coupon_active,
     list_order_manager_messages,
     list_user_manager_messages,
+    update_product,
     set_order_financials,
 )
 
@@ -195,6 +198,7 @@ def create_admin_app() -> FastAPI:
     @app.on_event("startup")
     async def _startup() -> None:  # pragma: no cover - io side effect
         init_db()
+        seed_default_catalog()
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:  # pragma: no cover - io side effect
@@ -332,29 +336,119 @@ def create_admin_app() -> FastAPI:
 
     @app.get("/products", name="products_page")
     async def products_page(request: Request, user: str = Depends(_login_required)):
-        rows = list_admin_rows()
+        items = get_admin_tree()
+        parent_options = [{"id": 0, "title": "(بدون والد)"}] + [
+            {"id": row["id"], "title": row["path_display"] or row["title"]}
+            for row in items
+        ]
         return _render(
             request,
             "products.html",
             {
                 "title": "مدیریت محصولات",
-                "products": rows,
+                "products": items,
+                "parents": parent_options,
                 "currency": CURRENCY,
                 "nav": "products",
             },
         )
 
-    @app.post("/products")
-    async def products_update(request: Request, user: str = Depends(_login_required)):
+    @app.post("/products/create")
+    async def products_create(request: Request, user: str = Depends(_login_required)):
         form = await request.form()
-        rows = list_admin_rows()
-        for row in rows:
-            for variant in row["variants"]:
-                code = variant["code"]
-                price_value = str(form.get(f"price_{code}", "0")).strip()
-                available = form.get(f"avail_{code}") == "on"
-                set_variant_settings(code, price_value or "0", available)
-        _flash(request, "تغییرات محصولات ذخیره شد.")
+        title = (form.get("title") or "").strip()
+        node_type = (form.get("type") or "product").lower()
+        parent_raw = form.get("parent_id")
+        parent_id = int(parent_raw) if parent_raw not in (None, "", "0") else None
+        try:
+            sort_order = int(form.get("sort_order") or 0)
+        except ValueError:
+            sort_order = 0
+        description = (form.get("description") or "").strip()
+        try:
+            price_val = int(form.get("price") or 0)
+        except ValueError:
+            price_val = 0
+        available = form.get("available") == "on"
+        is_category = node_type == "category"
+
+        if not title:
+            _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
+            return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+        if is_category:
+            price_val = 0
+            available = True
+
+        create_product(
+            title,
+            is_category=is_category,
+            parent_id=parent_id,
+            price=price_val,
+            available=available,
+            description=description,
+            sort_order=sort_order,
+        )
+        _flash(request, "محصول/دسته جدید ایجاد شد.")
+        return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.post("/products/{product_id}/update")
+    async def products_update(
+        request: Request,
+        product_id: int,
+        user: str = Depends(_login_required),
+    ):
+        form = await request.form()
+        title = (form.get("title") or "").strip()
+        node_type = (form.get("type") or "product").lower()
+        parent_raw = form.get("parent_id")
+        parent_id = int(parent_raw) if parent_raw not in (None, "", "0") else None
+        try:
+            sort_order = int(form.get("sort_order") or 0)
+        except ValueError:
+            sort_order = 0
+        description = (form.get("description") or "").strip()
+        try:
+            price_val = int(form.get("price") or 0)
+        except ValueError:
+            price_val = 0
+        available = form.get("available") == "on"
+        is_category = node_type == "category"
+
+        if not title:
+            _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
+            return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+        if is_category:
+            price_val = 0
+            available = True
+
+        ok = update_product(
+            product_id,
+            title=title,
+            is_category=is_category,
+            parent_id=parent_id,
+            price=price_val,
+            available=available,
+            description=description,
+            sort_order=sort_order,
+        )
+        if not ok:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="محصول یافت نشد")
+
+        _flash(request, "تغییرات ذخیره شد.")
+        return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.post("/products/{product_id}/delete")
+    async def products_delete(
+        request: Request,
+        product_id: int,
+        user: str = Depends(_login_required),
+    ):
+        if not get_product(product_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="محصول یافت نشد")
+        delete_product(product_id)
+        _flash(request, "محصول/دسته حذف شد.")
         return RedirectResponse(request.url_for("products_page"), status.HTTP_303_SEE_OTHER)
 
     @app.get("/orders/{order_id}")
