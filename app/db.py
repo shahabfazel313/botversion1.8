@@ -206,6 +206,9 @@ def init_db():
             if _table_exists(con, t) and not _col_exists(con, t, c):
                 cur.execute(f"ALTER TABLE {t} ADD COLUMN {c} {typ};")
 
+        # ensure schema changes are persisted before closing the connection
+        con.commit()
+
         # wallet transactions
         cur.execute("""
         CREATE TABLE IF NOT EXISTS wallet_tx(
