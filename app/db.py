@@ -1,11 +1,16 @@
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Iterable
 from .config import DB_PATH, ORDER_ID_MIN_VALUE, PAYMENT_TIMEOUT_MIN
 
 def _connect():
-    con = sqlite3.connect(DB_PATH)
+    db_path = Path(DB_PATH)
+    parent = db_path.parent
+    if parent and str(parent) not in {"", "."}:
+        parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(db_path))
     con.row_factory = sqlite3.Row
     return con
 
