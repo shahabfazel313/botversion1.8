@@ -1,11 +1,16 @@
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Iterable
 from .config import DB_PATH, ORDER_ID_MIN_VALUE, PAYMENT_TIMEOUT_MIN
 
 def _connect():
-    con = sqlite3.connect(DB_PATH)
+    db_path = Path(DB_PATH)
+    parent = db_path.parent
+    if parent and str(parent) not in {"", "."}:
+        parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(db_path))
     con.row_factory = sqlite3.Row
     return con
 
@@ -120,6 +125,33 @@ def init_db():
             status TEXT, created_at TEXT, updated_at TEXT
         );
         """)
+        # products catalog
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS products(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                price INTEGER DEFAULT 0,
+                available INTEGER DEFAULT 1,
+                is_category INTEGER DEFAULT 0,
+                request_only INTEGER DEFAULT 0,
+                account_enabled INTEGER DEFAULT 0,
+                self_available INTEGER DEFAULT 0,
+                self_price INTEGER DEFAULT 0,
+                pre_available INTEGER DEFAULT 0,
+                pre_price INTEGER DEFAULT 0,
+                require_username INTEGER DEFAULT 0,
+                require_password INTEGER DEFAULT 0,
+                sort_order INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_products_parent ON products(parent_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_products_sort ON products(sort_order);")
         # service messages (requests sent from bot)
         cur.execute(
             """
@@ -159,6 +191,10 @@ def init_db():
             ("orders", "manager_note", "TEXT"),
             ("orders", "internal_cost", "INTEGER DEFAULT 0"),
             ("orders", "net_revenue", "INTEGER DEFAULT 0"),
+            ("orders", "require_username", "INTEGER DEFAULT 0"),
+            ("orders", "require_password", "INTEGER DEFAULT 0"),
+            ("orders", "customer_username", "TEXT"),
+            ("orders", "customer_password", "TEXT"),
             ("users", "contact_phone", "TEXT"),
             ("users", "contact_verified", "INTEGER DEFAULT 0"),
             ("users", "contact_shared_at", "TEXT"),
@@ -169,6 +205,9 @@ def init_db():
         for t, c, typ in add_cols:
             if _table_exists(con, t) and not _col_exists(con, t, c):
                 cur.execute(f"ALTER TABLE {t} ADD COLUMN {c} {typ};")
+
+        # ensure schema changes are persisted before closing the connection
+        con.commit()
 
         # wallet transactions
         cur.execute("""
@@ -330,8 +369,14 @@ def create_order(
     customer_email: str | None = None,
     notes: str | None = None,
     customer_secret: str | None = None,
+    *,
+    require_username: bool = False,
+    require_password: bool = False,
+    customer_username: str | None = None,
+    customer_password: str | None = None,
+    allow_free: bool = False,
 ) -> int | None:
-    if amount_total <= 0:
+    if amount_total <= 0 and not allow_free:
         return None
     now = datetime.now()
     ensure_order_id_floor()
@@ -342,15 +387,21 @@ def create_order(
             status, created_at, updated_at,
             amount_total, currency, service_category, service_code,
             account_mode, customer_email, notes,
-            customer_secret_encrypted
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            customer_secret_encrypted,
+            require_username, require_password,
+            customer_username, customer_password
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         user["user_id"], user["username"], user["first_name"] or "",
         None, title, str(amount_total),
         "AWAITING_PAYMENT", now.isoformat(timespec="seconds"), now.isoformat(timespec="seconds"),
         amount_total, currency, service_category, service_code,
         account_mode or "", customer_email or "", notes or "",
-        customer_secret or ""
+        customer_secret or "",
+        1 if require_username else 0,
+        1 if require_password else 0,
+        customer_username or "",
+        customer_password or "",
     ), return_lastrowid=True)
     # تنظیم ددلاین ۱۵ دقیقه
     await_deadline = (now + timedelta(minutes=PAYMENT_TIMEOUT_MIN)).isoformat(timespec="seconds")
@@ -1103,3 +1154,168 @@ def set_service_message_status(message_id: int, resolved: bool) -> None:
         "UPDATE service_messages SET is_resolved=?, updated_at=? WHERE id=?",
         (1 if resolved else 0, datetime.now().isoformat(timespec="seconds"), message_id),
     )
+
+
+# ====== Products Catalog ======
+
+
+def list_products(parent_id: int | None = None) -> list[dict[str, Any]]:
+    return db_execute(
+        """
+        SELECT * FROM products
+        WHERE COALESCE(parent_id, 0)=COALESCE(?, 0)
+        ORDER BY sort_order ASC, title ASC
+        """,
+        (parent_id,),
+        fetchall=True,
+    )
+
+
+def list_all_products() -> list[dict[str, Any]]:
+    return db_execute("SELECT * FROM products ORDER BY sort_order ASC, title ASC", fetchall=True)
+
+
+def get_product(product_id: int) -> dict[str, Any] | None:
+    return db_execute("SELECT * FROM products WHERE id=?", (product_id,), fetchone=True)
+
+
+def has_sort_conflict(
+    *, parent_id: int | None, is_category: bool, sort_order: int, exclude_id: int | None = None
+) -> bool:
+    query = """
+        SELECT 1 FROM products
+        WHERE (parent_id IS ? OR parent_id=?)
+          AND is_category=?
+          AND sort_order=?
+    """
+    params: list[Any] = [parent_id, parent_id, 1 if is_category else 0, sort_order]
+    if exclude_id:
+        query += " AND id != ?"
+        params.append(exclude_id)
+    row = db_execute(query + " LIMIT 1", tuple(params), fetchone=True)
+    return bool(row)
+
+
+def create_product(
+    title: str,
+    *,
+    is_category: bool = False,
+    parent_id: int | None = None,
+    price: int = 0,
+    available: bool = True,
+    description: str = "",
+    request_only: bool = False,
+    account_enabled: bool = False,
+    self_available: bool = False,
+    self_price: int = 0,
+    pre_available: bool = False,
+    pre_price: int = 0,
+    require_username: bool = False,
+    require_password: bool = False,
+    sort_order: int = 0,
+) -> int:
+    now = datetime.now().isoformat(timespec="seconds")
+    return db_execute(
+        """
+        INSERT INTO products(
+            parent_id, title, description, price, available, is_category, request_only, account_enabled,
+            self_available, self_price, pre_available, pre_price, require_username, require_password,
+            sort_order, created_at, updated_at
+        )
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            parent_id,
+            title.strip(),
+            description or "",
+            max(int(price), 0),
+            1 if available else 0,
+            1 if is_category else 0,
+            1 if request_only else 0,
+            1 if account_enabled else 0,
+            1 if self_available else 0,
+            max(int(self_price), 0),
+            1 if pre_available else 0,
+            max(int(pre_price), 0),
+            1 if require_username else 0,
+            1 if require_password else 0,
+            sort_order,
+            now,
+            now,
+        ),
+        return_lastrowid=True,
+    )
+
+
+def update_product(
+    product_id: int,
+    *,
+    title: str | None = None,
+    is_category: bool | None = None,
+    parent_id: int | None = None,
+    price: int | None = None,
+    available: bool | None = None,
+    description: str | None = None,
+    request_only: bool | None = None,
+    account_enabled: bool | None = None,
+    self_available: bool | None = None,
+    self_price: int | None = None,
+    pre_available: bool | None = None,
+    pre_price: int | None = None,
+    require_username: bool | None = None,
+    require_password: bool | None = None,
+    sort_order: int | None = None,
+) -> bool:
+    current = get_product(product_id)
+    if not current:
+        return False
+    fields = {
+        "title": title if title is not None else current.get("title"),
+        "description": description if description is not None else current.get("description"),
+        "price": max(int(price), 0) if price is not None else int(current.get("price") or 0),
+        "available": 1 if (available if available is not None else current.get("available")) else 0,
+        "is_category": 1 if (is_category if is_category is not None else current.get("is_category")) else 0,
+        "request_only": 1 if (request_only if request_only is not None else current.get("request_only")) else 0,
+        "account_enabled": 1 if (account_enabled if account_enabled is not None else current.get("account_enabled")) else 0,
+        "self_available": 1 if (self_available if self_available is not None else current.get("self_available")) else 0,
+        "self_price": max(int(self_price), 0) if self_price is not None else int(current.get("self_price") or 0),
+        "pre_available": 1 if (pre_available if pre_available is not None else current.get("pre_available")) else 0,
+        "pre_price": max(int(pre_price), 0) if pre_price is not None else int(current.get("pre_price") or 0),
+        "require_username": 1 if (require_username if require_username is not None else current.get("require_username")) else 0,
+        "require_password": 1 if (require_password if require_password is not None else current.get("require_password")) else 0,
+        "sort_order": sort_order if sort_order is not None else int(current.get("sort_order") or 0),
+        "parent_id": parent_id if parent_id is not None else current.get("parent_id"),
+    }
+    db_execute(
+        """
+        UPDATE products
+        SET title=?, description=?, price=?, available=?, is_category=?, request_only=?, account_enabled=?,
+            self_available=?, self_price=?, pre_available=?, pre_price=?, require_username=?, require_password=?,
+            sort_order=?, parent_id=?, updated_at=?
+        WHERE id=?
+        """,
+        (
+            fields["title"],
+            fields["description"],
+            fields["price"],
+            fields["available"],
+            fields["is_category"],
+            fields["request_only"],
+            fields["account_enabled"],
+            fields["self_available"],
+            fields["self_price"],
+            fields["pre_available"],
+            fields["pre_price"],
+            fields["require_username"],
+            fields["require_password"],
+            fields["sort_order"],
+            fields["parent_id"],
+            datetime.now().isoformat(timespec="seconds"),
+            product_id,
+        ),
+    )
+    return True
+
+
+def delete_product(product_id: int) -> None:
+    db_execute("DELETE FROM products WHERE id=?", (product_id,))

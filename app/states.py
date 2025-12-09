@@ -40,3 +40,9 @@ class BuildBotStates(StatesGroup):
 
 class ProfileStates(StatesGroup):
     wait_coupon_code = State()
+
+
+class CatalogStates(StatesGroup):
+    wait_request = State()
+    wait_username = State()
+    wait_password = State()
