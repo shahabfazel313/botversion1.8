@@ -26,6 +26,8 @@ def _normalize_item(raw: dict) -> dict:
     item["price"] = int(item.get("price") or 0)
     item["self_price"] = int(item.get("self_price") or 0)
     item["pre_price"] = int(item.get("pre_price") or 0)
+    if item["self_available"] or item["pre_available"]:
+        item["account_enabled"] = True
     return item
 
 

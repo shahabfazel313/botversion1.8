@@ -35,6 +35,41 @@ body[data-theme="dark"] {
     --danger: #f87171;
 }
 
+body[data-theme="dark"] .card,
+body[data-theme="dark"] .panel,
+body[data-theme="dark"] .auth-box {
+    background: linear-gradient(160deg, rgba(17, 24, 39, 0.92), rgba(30, 41, 59, 0.92));
+    border-color: rgba(148, 163, 184, 0.35);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+body[data-theme="dark"] .grid.cards .card {
+    background: linear-gradient(160deg, rgba(15, 23, 42, 0.95), rgba(17, 24, 39, 0.9));
+    color: var(--text);
+}
+
+body[data-theme="dark"] table tbody tr:nth-child(odd) { background: rgba(15, 23, 42, 0.45); }
+body[data-theme="dark"] table tbody tr:hover { background: rgba(79, 70, 229, 0.12); }
+
+body[data-theme="dark"] .card:after {
+    background: radial-gradient(circle at 80% 10%, rgba(139,92,246,0.28), transparent 36%);
+}
+
+body[data-theme="dark"] .card.warning {
+    background: linear-gradient(150deg, rgba(251,191,36,0.14), rgba(217,119,6,0.18));
+    border-color: rgba(251, 191, 36, 0.3);
+}
+
+body[data-theme="dark"] .card.success {
+    background: linear-gradient(150deg, rgba(16,185,129,0.16), rgba(5,150,105,0.14));
+    border-color: rgba(52, 211, 153, 0.28);
+}
+
+body[data-theme="dark"] .card.accent {
+    background: linear-gradient(150deg, rgba(139,92,246,0.2), rgba(59,130,246,0.16));
+    border-color: rgba(139, 92, 246, 0.32);
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -156,6 +191,33 @@ h1, h2, h3 {
     font-weight: 700;
 }
 
+label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+label .hint-inline {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.85rem;
+}
+
+label.checkbox {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 600;
+}
+
+.checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
+
 .page-header {
     margin: 0 0 1.25rem 0;
     display: flex;
@@ -265,6 +327,10 @@ h1, h2, h3 {
     gap: 1rem;
 }
 
+.panel header h2 {
+    margin-bottom: 0.35rem;
+}
+
 .panel header p { margin: 0; color: var(--muted); }
 
 .panel header .link { font-size: 0.92rem; }
@@ -315,6 +381,56 @@ table th, table td {
 
 table tbody tr:nth-child(odd) { background: var(--surface); }
 table tbody tr:hover { background: rgba(79, 70, 229, 0.04); }
+
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.products-table {
+    min-width: 920px;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.products-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.products-table td,
+.products-table th {
+    vertical-align: top;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+}
+
+.products-table tr:last-child td { border-bottom: none; }
+
+.products-table .stack,
+.products-table .inline-fields {
+    align-items: flex-start;
+}
+
+.products-table .tree-title {
+    gap: 0.65rem;
+}
+
+.products-table .path {
+    color: var(--muted);
+    display: block;
+}
+
+.products-table textarea,
+.products-table input[type="number"],
+.products-table select,
+.products-table input[type="text"] {
+    background: var(--surface-alt);
+}
 
 .message-text { max-width: 360px; word-break: break-word; }
 
@@ -427,13 +543,23 @@ table td a.link { color: var(--accent); text-decoration: none; font-weight: 700;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.form-grid .full, .form-grid .span { grid-column: 1 / -1; }
+
 .form-grid textarea, .form-grid input, .form-grid select {
     width: 100%;
-    padding: 0.7rem;
+    padding: 0.78rem 0.9rem;
     border-radius: 12px;
     border: 1px solid var(--border);
     font-family: inherit;
     background: var(--surface-alt);
+}
+
+.form-grid textarea { min-height: 110px; }
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
 }
 
 .form-actions {
@@ -485,15 +611,16 @@ table td a.link { color: var(--accent); text-decoration: none; font-weight: 700;
 
 .inline-fields {
     display: flex;
-    gap: 0.75rem;
-    align-items: center;
+    gap: 1rem;
+    align-items: stretch;
+    flex-wrap: wrap;
 }
 
 .inline-fields label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    min-width: 180px;
 }
+
+.inline-fields label.checkbox { min-width: unset; }
 
 .form-inline {
     display: flex;
@@ -567,6 +694,38 @@ table td a.link { color: var(--accent); text-decoration: none; font-weight: 700;
     border: 1px solid var(--border);
     background: var(--surface);
 }
+
+.note-box {
+    background: var(--surface-alt);
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.hidden { display: none !important; }
+
+.section-divider {
+    grid-column: 1 / -1;
+    margin: 0.5rem 0 -0.25rem;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: -0.01em;
+}
+
+.pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    gap: 0.35rem;
+    color: var(--muted);
+}
+
+body[data-theme="dark"] .pill { color: var(--text); }
 
 .product-variant .checkbox {
     display: flex;

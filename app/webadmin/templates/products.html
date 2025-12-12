@@ -33,43 +33,51 @@
         <h2>ایجاد محصول/خدمت جدید</h2>
         <p class="muted">محصولات می‌توانند درخواست‌محور یا دارای حالت اکانت باشند.</p>
     </header>
-    <form method="post" action="{{ url_for('products_create') }}" class="grid form-grid">
+    <form method="post" action="{{ url_for('products_create') }}" class="grid form-grid" id="create-product-form">
         <input type="hidden" name="type" value="product">
-        <label>
+        <div class="section-divider">اطلاعات پایه</div>
+        <label class="full">
             نام محصول
             <input type="text" name="title" required placeholder="مثلاً سرویس جدید">
         </label>
-        <label>
-            والد (فقط دسته)
-            <select name="parent_id">
-                {% for p in parents %}
-                <option value="{{ p.id }}">{{ p.title }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <label>
-            ترتیب نمایش
-            <input type="number" name="sort_order" value="0" min="0">
-        </label>
-        <label>
-            قیمت پایه ({{ currency }})
-            <input type="number" name="price" value="0" min="0" step="1000">
-        </label>
-        <label class="checkbox">
-            <input type="checkbox" name="available" checked>
-            موجود باشد
-        </label>
-        <label class="checkbox">
-            <input type="checkbox" name="request_only">
-            فقط ثبت درخواست (بدون قیمت)
-        </label>
-        <label class="checkbox">
-            <input type="checkbox" name="account_enabled">
-            دارای انتخاب اکانت باشد
-        </label>
-        <div class="inline-fields span">
+        <div class="inline-fields">
+            <label>
+                والد (فقط دسته)
+                <select name="parent_id">
+                    {% for p in parents %}
+                    <option value="{{ p.id }}">{{ p.title }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                ترتیب نمایش
+                <input type="number" name="sort_order" value="0" min="0">
+            </label>
             <label class="checkbox">
-                <input type="checkbox" name="self_available">
+                <input type="checkbox" name="available" checked>
+                موجود باشد
+            </label>
+        </div>
+        <div class="inline-fields">
+            <label>
+                قیمت پایه ({{ currency }})
+                <input type="number" name="price" value="0" min="0" step="1000">
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" name="request_only" id="request-only-toggle">
+                فقط ثبت درخواست (بدون قیمت)
+            </label>
+            <span class="pill">در حالت درخواست، سایر گزینه‌ها قفل می‌شوند.</span>
+        </div>
+
+        <div class="section-divider">حالت اکانت</div>
+        <div class="inline-fields span account-block" data-account-row="new">
+            <label class="checkbox">
+                <input type="checkbox" name="account_enabled" id="account-enabled">
+                حالت اکانت فعال باشد
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" name="self_available" data-account-toggle="new" id="self-available">
                 روی اکانت خودم فعال باشد
             </label>
             <label>
@@ -77,7 +85,7 @@
                 <input type="number" name="self_price" value="0" min="0" step="1000">
             </label>
             <label class="checkbox">
-                <input type="checkbox" name="pre_available">
+                <input type="checkbox" name="pre_available" data-account-toggle="new" id="pre-available">
                 اکانت از پیش ساخته شده فعال باشد
             </label>
             <label>
@@ -85,19 +93,20 @@
                 <input type="number" name="pre_price" value="0" min="0" step="1000">
             </label>
         </div>
-        <div class="inline-fields span">
+        <div class="inline-fields span credentials-box" data-credentials-for="new">
             <label class="checkbox">
-                <input type="checkbox" name="require_username">
-                گرفتن یوزر
+                <input type="checkbox" name="require_username" id="require-username">
+                گرفتن یوزر/ایمیل
             </label>
             <label class="checkbox">
-                <input type="checkbox" name="require_password">
+                <input type="checkbox" name="require_password" id="require-password">
                 گرفتن پسورد
             </label>
+            <span class="hint-inline">این موارد پس از انتخاب حالت اکانت از مشتری پرسیده می‌شوند.</span>
         </div>
         <label class="full">
             توضیحات
-            <textarea name="description" rows="2" placeholder="توضیح کوتاه برای صفحهٔ محصول"></textarea>
+            <textarea name="description" rows="3" placeholder="توضیح کوتاه برای صفحهٔ محصول"></textarea>
         </label>
         <div class="form-actions">
             <button type="submit" class="btn-primary">ایجاد محصول</button>
@@ -111,20 +120,21 @@
         <p class="muted">قیمت‌ها بر حسب {{ currency }} هستند. هر ردیف قابل ویرایش مستقیم است.</p>
     </header>
     <form method="post" action="{{ url_for('products_bulk_update') }}" id="bulk-form">
-        <table class="products-table">
-            <thead>
-                <tr>
-                    <th>عنوان</th>
-                    <th>چیدمان</th>
-                    <th>گزینه‌ها</th>
-                    <th>والد</th>
-                    <th>توضیحات</th>
-                    <th>عملیات</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in products %}
-                <tr>
+        <div class="table-wrapper">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>عنوان</th>
+                        <th>چیدمان</th>
+                        <th>گزینه‌ها</th>
+                        <th>والد</th>
+                        <th>توضیحات</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in products %}
+                    <tr data-product-row="{{ item.id }}">
                     <td>
                         <div class="tree-title" style="--depth: {{ item.depth }};">
                             <span class="node-tag {{ 'category' if item.is_category else 'product' }}">{{ '📂' if item.is_category else '🛍️' }}</span>
@@ -161,12 +171,12 @@
                                 </label>
                                 <label class="checkbox">
                                     <input type="checkbox" name="account_enabled-{{ item.id }}" {% if item.account_enabled %}checked{% endif %}>
-                                    انتخاب اکانت
+                                    حالت اکانت فعال
                                 </label>
                             </div>
-                            <div class="inline-fields">
+                            <div class="inline-fields account-block" data-account-row="{{ item.id }}">
                                 <label class="checkbox">
-                                    <input type="checkbox" name="self_available-{{ item.id }}" {% if item.self_available %}checked{% endif %}>
+                                    <input type="checkbox" name="self_available-{{ item.id }}" {% if item.self_available %}checked{% endif %} data-account-toggle="{{ item.id }}">
                                     روی اکانت خودم
                                 </label>
                                 <label>
@@ -174,7 +184,7 @@
                                     <input type="number" name="self_price-{{ item.id }}" value="{{ item.self_price }}" min="0" step="1000">
                                 </label>
                                 <label class="checkbox">
-                                    <input type="checkbox" name="pre_available-{{ item.id }}" {% if item.pre_available %}checked{% endif %}>
+                                    <input type="checkbox" name="pre_available-{{ item.id }}" {% if item.pre_available %}checked{% endif %} data-account-toggle="{{ item.id }}">
                                     اکانت آماده
                                 </label>
                                 <label>
@@ -182,15 +192,16 @@
                                     <input type="number" name="pre_price-{{ item.id }}" value="{{ item.pre_price }}" min="0" step="1000">
                                 </label>
                             </div>
-                            <div class="inline-fields">
+                            <div class="inline-fields credentials-box" data-credentials-for="{{ item.id }}">
                                 <label class="checkbox">
                                     <input type="checkbox" name="require_username-{{ item.id }}" {% if item.require_username %}checked{% endif %}>
-                                    گرفتن یوزر
+                                    گرفتن یوزر/ایمیل
                                 </label>
                                 <label class="checkbox">
                                     <input type="checkbox" name="require_password-{{ item.id }}" {% if item.require_password %}checked{% endif %}>
                                     گرفتن پسورد
                                 </label>
+                                <span class="hint-inline">هنگام خرید در بات نمایش داده می‌شود.</span>
                             </div>
                             {% endif %}
                         </div>
@@ -217,10 +228,103 @@
                 <tr><td colspan="6" class="empty">هنوز محصولی ثبت نشده است.</td></tr>
                 {% endfor %}
             </tbody>
-        </table>
+            </table>
+        </div>
         <div class="form-actions">
             <button type="submit" class="btn-primary">تایید کلی</button>
         </div>
     </form>
 </section>
+<script>
+    const initCreateFormGuards = () => {
+        const form = document.getElementById('create-product-form');
+        if (!form) return;
+
+        const requestOnly = form.querySelector('#request-only-toggle');
+        const accountEnabled = form.querySelector('#account-enabled');
+        const selfToggle = form.querySelector('#self-available');
+        const preToggle = form.querySelector('#pre-available');
+        const basePrice = form.querySelector('input[name="price"]');
+        const selfPrice = form.querySelector('input[name="self_price"]');
+        const prePrice = form.querySelector('input[name="pre_price"]');
+        const reqUsername = form.querySelector('#require-username');
+        const reqPassword = form.querySelector('#require-password');
+        const credentialsRow = form.querySelector('[data-credentials-for="new"]');
+
+        const syncRequestOnlyState = () => {
+            const locked = Boolean(requestOnly && requestOnly.checked);
+            if (accountEnabled) {
+                accountEnabled.disabled = locked;
+                if (locked) accountEnabled.checked = false;
+            }
+            if (basePrice) {
+                basePrice.disabled = locked;
+                if (locked) basePrice.value = '0';
+            }
+            [selfToggle, preToggle, selfPrice, prePrice, reqUsername, reqPassword].forEach((el) => {
+                if (!el) return;
+                el.disabled = locked;
+                if (locked && el.type === 'checkbox') el.checked = false;
+            });
+            if (credentialsRow) credentialsRow.classList.toggle('hidden', locked);
+        };
+
+        if (requestOnly) requestOnly.addEventListener('change', syncRequestOnlyState);
+
+        syncRequestOnlyState();
+    };
+
+    const clampRowState = (row) => {
+        const id = row.dataset.productRow;
+        const requestOnly = row.querySelector(`[name="request_only-${id}"]`);
+        const accountEnabled = row.querySelector(`[name="account_enabled-${id}"]`);
+        const priceInput = row.querySelector(`[name="price-${id}"]`);
+        const selfToggle = row.querySelector(`[name="self_available-${id}"]`);
+        const preToggle = row.querySelector(`[name="pre_available-${id}"]`);
+        const selfPrice = row.querySelector(`[name="self_price-${id}"]`);
+        const prePrice = row.querySelector(`[name="pre_price-${id}"]`);
+        const reqUsername = row.querySelector(`[name="require_username-${id}"]`);
+        const reqPassword = row.querySelector(`[name="require_password-${id}"]`);
+        const credentialsRow = row.querySelector(`[data-credentials-for="${id}"]`);
+
+        const requestMode = Boolean(requestOnly && requestOnly.checked);
+
+        if (requestOnly) {
+            if (accountEnabled) {
+                accountEnabled.disabled = requestMode;
+                if (requestMode) accountEnabled.checked = false;
+            }
+            if (priceInput) {
+                priceInput.disabled = requestMode;
+                if (requestMode) priceInput.value = '0';
+            }
+        }
+        if (!requestMode) {
+            if (accountEnabled) accountEnabled.disabled = false;
+            if (priceInput) priceInput.disabled = false;
+        }
+
+        [selfToggle, preToggle, selfPrice, prePrice, reqUsername, reqPassword].forEach((el) => {
+            if (!el) return;
+            el.disabled = requestMode;
+            if (requestMode && el.type === 'checkbox') el.checked = false;
+        });
+
+        if (credentialsRow) credentialsRow.classList.toggle('hidden', requestMode);
+    };
+
+    const initBulkGuards = () => {
+        document.querySelectorAll('[data-product-row]').forEach((row) => {
+            const id = row.dataset.productRow;
+            ['request_only', 'account_enabled', 'self_available', 'pre_available'].forEach((name) => {
+                const input = row.querySelector(`[name="${name}-${id}"]`);
+                if (input) input.addEventListener('change', () => clampRowState(row));
+            });
+            clampRowState(row);
+        });
+    };
+
+    initCreateFormGuards();
+    initBulkGuards();
+</script>
 {% endblock %}
