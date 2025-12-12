@@ -378,6 +378,8 @@ def create_admin_app() -> FastAPI:
         account_enabled = form.get("account_enabled") == "on"
         self_available = form.get("self_available") == "on"
         pre_available = form.get("pre_available") == "on"
+        if self_available or pre_available:
+            account_enabled = True
         try:
             self_price = int(form.get("self_price") or 0)
         except ValueError:
@@ -474,6 +476,8 @@ def create_admin_app() -> FastAPI:
         account_enabled = form.get("account_enabled") == "on"
         self_available = form.get("self_available") == "on"
         pre_available = form.get("pre_available") == "on"
+        if self_available or pre_available:
+            account_enabled = True
         require_username = form.get("require_username") == "on"
         require_password = form.get("require_password") == "on"
         try:
@@ -595,6 +599,8 @@ def create_admin_app() -> FastAPI:
             account_enabled = form.get(f"account_enabled-{pid}") == "on"
             self_available = form.get(f"self_available-{pid}") == "on"
             pre_available = form.get(f"pre_available-{pid}") == "on"
+            if self_available or pre_available:
+                account_enabled = True
             require_username = form.get(f"require_username-{pid}") == "on"
             require_password = form.get(f"require_password-{pid}") == "on"
             try:
