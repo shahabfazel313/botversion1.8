@@ -33,8 +33,9 @@
         <h2>ایجاد محصول/خدمت جدید</h2>
         <p class="muted">محصولات می‌توانند درخواست‌محور یا دارای حالت اکانت باشند.</p>
     </header>
-    <form method="post" action="{{ url_for('products_create') }}" class="grid form-grid">
+    <form method="post" action="{{ url_for('products_create') }}" class="grid form-grid" id="create-product-form">
         <input type="hidden" name="type" value="product">
+        <div class="section-divider">اطلاعات پایه</div>
         <label>
             نام محصول
             <input type="text" name="title" required placeholder="مثلاً سرویس جدید">
@@ -55,21 +56,26 @@
             قیمت پایه ({{ currency }})
             <input type="number" name="price" value="0" min="0" step="1000">
         </label>
-        <label class="checkbox">
-            <input type="checkbox" name="available" checked>
-            موجود باشد
-        </label>
-        <label class="checkbox">
-            <input type="checkbox" name="request_only">
-            فقط ثبت درخواست (بدون قیمت)
-        </label>
-        <label class="checkbox">
-            <input type="checkbox" name="account_enabled">
-            دارای انتخاب اکانت باشد
-        </label>
-        <div class="inline-fields span">
+        <div class="inline-fields">
             <label class="checkbox">
-                <input type="checkbox" name="self_available">
+                <input type="checkbox" name="available" checked>
+                موجود باشد
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" name="request_only">
+                فقط ثبت درخواست (بدون قیمت)
+            </label>
+            <span class="pill">نمایش در صورت فعال بودن یکی از گزینه‌ها</span>
+        </div>
+
+        <div class="section-divider">حالت اکانت</div>
+        <div class="inline-fields span account-block" data-account-row="new">
+            <label class="checkbox">
+                <input type="checkbox" name="account_enabled">
+                حالت اکانت فعال باشد
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" name="self_available" data-account-toggle="new">
                 روی اکانت خودم فعال باشد
             </label>
             <label>
@@ -77,7 +83,7 @@
                 <input type="number" name="self_price" value="0" min="0" step="1000">
             </label>
             <label class="checkbox">
-                <input type="checkbox" name="pre_available">
+                <input type="checkbox" name="pre_available" data-account-toggle="new">
                 اکانت از پیش ساخته شده فعال باشد
             </label>
             <label>
@@ -85,19 +91,20 @@
                 <input type="number" name="pre_price" value="0" min="0" step="1000">
             </label>
         </div>
-        <div class="inline-fields span">
+        <div class="inline-fields span credentials-box" data-credentials-for="new">
             <label class="checkbox">
                 <input type="checkbox" name="require_username">
-                گرفتن یوزر
+                گرفتن یوزر/ایمیل
             </label>
             <label class="checkbox">
                 <input type="checkbox" name="require_password">
                 گرفتن پسورد
             </label>
+            <span class="hint-inline">این موارد پس از انتخاب حالت اکانت از مشتری پرسیده می‌شوند.</span>
         </div>
         <label class="full">
             توضیحات
-            <textarea name="description" rows="2" placeholder="توضیح کوتاه برای صفحهٔ محصول"></textarea>
+            <textarea name="description" rows="3" placeholder="توضیح کوتاه برای صفحهٔ محصول"></textarea>
         </label>
         <div class="form-actions">
             <button type="submit" class="btn-primary">ایجاد محصول</button>
@@ -161,12 +168,12 @@
                                 </label>
                                 <label class="checkbox">
                                     <input type="checkbox" name="account_enabled-{{ item.id }}" {% if item.account_enabled %}checked{% endif %}>
-                                    انتخاب اکانت
+                                    حالت اکانت فعال
                                 </label>
                             </div>
-                            <div class="inline-fields">
+                            <div class="inline-fields account-block" data-account-row="{{ item.id }}">
                                 <label class="checkbox">
-                                    <input type="checkbox" name="self_available-{{ item.id }}" {% if item.self_available %}checked{% endif %}>
+                                    <input type="checkbox" name="self_available-{{ item.id }}" {% if item.self_available %}checked{% endif %} data-account-toggle="{{ item.id }}">
                                     روی اکانت خودم
                                 </label>
                                 <label>
@@ -174,7 +181,7 @@
                                     <input type="number" name="self_price-{{ item.id }}" value="{{ item.self_price }}" min="0" step="1000">
                                 </label>
                                 <label class="checkbox">
-                                    <input type="checkbox" name="pre_available-{{ item.id }}" {% if item.pre_available %}checked{% endif %}>
+                                    <input type="checkbox" name="pre_available-{{ item.id }}" {% if item.pre_available %}checked{% endif %} data-account-toggle="{{ item.id }}">
                                     اکانت آماده
                                 </label>
                                 <label>
@@ -182,15 +189,16 @@
                                     <input type="number" name="pre_price-{{ item.id }}" value="{{ item.pre_price }}" min="0" step="1000">
                                 </label>
                             </div>
-                            <div class="inline-fields">
+                            <div class="inline-fields credentials-box" data-credentials-for="{{ item.id }}">
                                 <label class="checkbox">
                                     <input type="checkbox" name="require_username-{{ item.id }}" {% if item.require_username %}checked{% endif %}>
-                                    گرفتن یوزر
+                                    گرفتن یوزر/ایمیل
                                 </label>
                                 <label class="checkbox">
                                     <input type="checkbox" name="require_password-{{ item.id }}" {% if item.require_password %}checked{% endif %}>
                                     گرفتن پسورد
                                 </label>
+                                <span class="hint-inline">هنگام خرید در بات نمایش داده می‌شود.</span>
                             </div>
                             {% endif %}
                         </div>
@@ -223,4 +231,20 @@
         </div>
     </form>
 </section>
+<script>
+    const syncCredentialRows = () => {
+        document.querySelectorAll('[data-credentials-for]').forEach((row) => {
+            const id = row.dataset.credentialsFor;
+            const toggles = Array.from(document.querySelectorAll(`[data-account-toggle="${id}"]`));
+            const hasAccount = toggles.some((el) => el.checked);
+            row.classList.toggle('hidden', !hasAccount);
+        });
+    };
+
+    document.querySelectorAll('[data-account-toggle]').forEach((checkbox) => {
+        checkbox.addEventListener('change', syncCredentialRows);
+    });
+
+    syncCredentialRows();
+</script>
 {% endblock %}
