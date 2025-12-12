@@ -6,7 +6,13 @@ from . import router
 from .channel_gate import ensure_member_for_message
 from ..config import CURRENCY
 from ..db import create_order, ensure_user, get_user, set_order_customer_message
-from ..keyboards import REPLY_BTN_PRODUCTS, ik_dynamic_products, ik_product_actions, reply_main
+from ..keyboards import (
+    REPLY_BTN_PRODUCTS,
+    ik_cart_actions,
+    ik_dynamic_products,
+    ik_product_actions,
+    reply_main,
+)
 from ..products import find_public_product, list_public_children
 from ..states import CatalogStates
 
@@ -67,7 +73,7 @@ async def _create_order_and_confirm(
     )
     await message.answer(
         f"✅ سفارش #{order_id} برای «{product.get('title')}» ثبت شد و به سبد خرید اضافه شد. برای ادامه و پرداخت به سبد خرید مراجعه کنید.",
-        reply_markup=reply_main(),
+        reply_markup=ik_cart_actions(order_id),
     )
 
 

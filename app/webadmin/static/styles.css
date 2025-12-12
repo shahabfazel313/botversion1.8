@@ -44,8 +44,14 @@ body[data-theme="dark"] .auth-box {
 }
 
 body[data-theme="dark"] .grid.cards .card {
-    background: linear-gradient(160deg, rgba(15, 23, 42, 0.95), rgba(17, 24, 39, 0.9));
+    background: linear-gradient(160deg, #0f172a, #0b1224);
     color: var(--text);
+    border-color: rgba(148, 163, 184, 0.5);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+body[data-theme="dark"] .grid.cards .card:after {
+    background: radial-gradient(circle at 75% 18%, rgba(99,102,241,0.2), transparent 40%);
 }
 
 body[data-theme="dark"] table tbody tr:nth-child(odd) { background: rgba(15, 23, 42, 0.45); }

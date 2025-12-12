@@ -18,7 +18,9 @@ def _status_fa(code: str) -> str:
         "CANCELED": "لغو شده",
     }.get(code, code)
 
-def _order_title(service_category: str, code: str) -> str:
+def _order_title(service_category: str, code: str, plan_title: str | None = None) -> str:
+    if plan_title:
+        return plan_title
     if service_category == "AI":
         return {"team":"اکانت ChatGPT Team", "plus":"اکانت ChatGPT Plus", "google":"اکانت Google AI Pro"}.get(code, "سرویس هوش مصنوعی")
     if service_category == "TG":
@@ -49,7 +51,7 @@ async def send_checkout_prompt(msg: Message, order_id: int):
     if not o:
         await msg.answer("سفارش پیدا نشد.")
         return
-    title = _order_title(o.get("service_category",""), o.get("service_code",""))
+    title = _order_title(o.get("service_category",""), o.get("service_code",""), o.get("plan_title"))
     amount = int(o.get("amount_total") or 0)
     status = _status_fa(o.get("status") or "")
     text = (

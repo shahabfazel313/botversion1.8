@@ -397,7 +397,12 @@ async def cb_plan_confirm(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.clear()
 
-    title = _order_title(order.get("service_category", ""), order.get("service_code", ""), order.get("notes"))
+    title = _order_title(
+        order.get("service_category", ""),
+        order.get("service_code", ""),
+        order.get("notes"),
+        order.get("plan_title"),
+    )
     notice = (
         f"✨ طرح خرید اول — سفارش #{order_id}\n"
         f"مشتری: {mention(callback.from_user)} (@{callback.from_user.username or '—'})\n"
