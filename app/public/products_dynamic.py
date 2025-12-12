@@ -98,11 +98,6 @@ async def _begin_purchase(
 
     require_username = bool(product.get("require_username"))
     require_password = bool(product.get("require_password"))
-    if not (require_username or require_password):
-        await callback.answer(
-            "برای نمایش این سفارش در سبد خرید، دریافت یوزر یا پسورد باید فعال باشد.", show_alert=True
-        )
-        return
 
     await state.clear()
     account_mode = ""
