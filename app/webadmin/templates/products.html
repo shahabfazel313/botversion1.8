@@ -36,46 +36,48 @@
     <form method="post" action="{{ url_for('products_create') }}" class="grid form-grid" id="create-product-form">
         <input type="hidden" name="type" value="product">
         <div class="section-divider">اطلاعات پایه</div>
-        <label>
+        <label class="full">
             نام محصول
             <input type="text" name="title" required placeholder="مثلاً سرویس جدید">
         </label>
-        <label>
-            والد (فقط دسته)
-            <select name="parent_id">
-                {% for p in parents %}
-                <option value="{{ p.id }}">{{ p.title }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <label>
-            ترتیب نمایش
-            <input type="number" name="sort_order" value="0" min="0">
-        </label>
-        <label>
-            قیمت پایه ({{ currency }})
-            <input type="number" name="price" value="0" min="0" step="1000">
-        </label>
         <div class="inline-fields">
+            <label>
+                والد (فقط دسته)
+                <select name="parent_id">
+                    {% for p in parents %}
+                    <option value="{{ p.id }}">{{ p.title }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                ترتیب نمایش
+                <input type="number" name="sort_order" value="0" min="0">
+            </label>
             <label class="checkbox">
                 <input type="checkbox" name="available" checked>
                 موجود باشد
             </label>
+        </div>
+        <div class="inline-fields">
+            <label>
+                قیمت پایه ({{ currency }})
+                <input type="number" name="price" value="0" min="0" step="1000">
+            </label>
             <label class="checkbox">
-                <input type="checkbox" name="request_only">
+                <input type="checkbox" name="request_only" id="request-only-toggle">
                 فقط ثبت درخواست (بدون قیمت)
             </label>
-            <span class="pill">نمایش در صورت فعال بودن یکی از گزینه‌ها</span>
+            <span class="pill">در حالت درخواست، سایر گزینه‌ها قفل می‌شوند.</span>
         </div>
 
         <div class="section-divider">حالت اکانت</div>
         <div class="inline-fields span account-block" data-account-row="new">
             <label class="checkbox">
-                <input type="checkbox" name="account_enabled">
+                <input type="checkbox" name="account_enabled" id="account-enabled">
                 حالت اکانت فعال باشد
             </label>
             <label class="checkbox">
-                <input type="checkbox" name="self_available" data-account-toggle="new">
+                <input type="checkbox" name="self_available" data-account-toggle="new" id="self-available">
                 روی اکانت خودم فعال باشد
             </label>
             <label>
@@ -83,7 +85,7 @@
                 <input type="number" name="self_price" value="0" min="0" step="1000">
             </label>
             <label class="checkbox">
-                <input type="checkbox" name="pre_available" data-account-toggle="new">
+                <input type="checkbox" name="pre_available" data-account-toggle="new" id="pre-available">
                 اکانت از پیش ساخته شده فعال باشد
             </label>
             <label>
@@ -93,11 +95,11 @@
         </div>
         <div class="inline-fields span credentials-box" data-credentials-for="new">
             <label class="checkbox">
-                <input type="checkbox" name="require_username">
+                <input type="checkbox" name="require_username" id="require-username">
                 گرفتن یوزر/ایمیل
             </label>
             <label class="checkbox">
-                <input type="checkbox" name="require_password">
+                <input type="checkbox" name="require_password" id="require-password">
                 گرفتن پسورد
             </label>
             <span class="hint-inline">این موارد پس از انتخاب حالت اکانت از مشتری پرسیده می‌شوند.</span>
@@ -118,20 +120,21 @@
         <p class="muted">قیمت‌ها بر حسب {{ currency }} هستند. هر ردیف قابل ویرایش مستقیم است.</p>
     </header>
     <form method="post" action="{{ url_for('products_bulk_update') }}" id="bulk-form">
-        <table class="products-table">
-            <thead>
-                <tr>
-                    <th>عنوان</th>
-                    <th>چیدمان</th>
-                    <th>گزینه‌ها</th>
-                    <th>والد</th>
-                    <th>توضیحات</th>
-                    <th>عملیات</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in products %}
-                <tr>
+        <div class="table-wrapper">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>عنوان</th>
+                        <th>چیدمان</th>
+                        <th>گزینه‌ها</th>
+                        <th>والد</th>
+                        <th>توضیحات</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in products %}
+                    <tr data-product-row="{{ item.id }}">
                     <td>
                         <div class="tree-title" style="--depth: {{ item.depth }};">
                             <span class="node-tag {{ 'category' if item.is_category else 'product' }}">{{ '📂' if item.is_category else '🛍️' }}</span>
@@ -225,26 +228,134 @@
                 <tr><td colspan="6" class="empty">هنوز محصولی ثبت نشده است.</td></tr>
                 {% endfor %}
             </tbody>
-        </table>
+            </table>
+        </div>
         <div class="form-actions">
             <button type="submit" class="btn-primary">تایید کلی</button>
         </div>
     </form>
 </section>
 <script>
-    const syncCredentialRows = () => {
-        document.querySelectorAll('[data-credentials-for]').forEach((row) => {
-            const id = row.dataset.credentialsFor;
-            const toggles = Array.from(document.querySelectorAll(`[data-account-toggle="${id}"]`));
-            const hasAccount = toggles.some((el) => el.checked);
-            row.classList.toggle('hidden', !hasAccount);
+    const initCreateFormGuards = () => {
+        const form = document.getElementById('create-product-form');
+        if (!form) return;
+
+        const requestOnly = form.querySelector('#request-only-toggle');
+        const accountEnabled = form.querySelector('#account-enabled');
+        const selfToggle = form.querySelector('#self-available');
+        const preToggle = form.querySelector('#pre-available');
+        const basePrice = form.querySelector('input[name="price"]');
+        const selfPrice = form.querySelector('input[name="self_price"]');
+        const prePrice = form.querySelector('input[name="pre_price"]');
+        const reqUsername = form.querySelector('#require-username');
+        const reqPassword = form.querySelector('#require-password');
+        const credentialsRow = form.querySelector('[data-credentials-for="new"]');
+
+        const setAccountFieldsDisabled = (state) => {
+            [selfToggle, preToggle, selfPrice, prePrice, reqUsername, reqPassword].forEach((el) => {
+                if (!el) return;
+                el.disabled = state;
+                if (state && el.type === 'checkbox') el.checked = false;
+            });
+        };
+
+        const syncCredentialsVisibility = () => {
+            const showCreds =
+                accountEnabled && accountEnabled.checked && !(requestOnly && requestOnly.checked) &&
+                ((selfToggle && selfToggle.checked) || (preToggle && preToggle.checked));
+            if (credentialsRow) {
+                credentialsRow.classList.toggle('hidden', !showCreds);
+            }
+        };
+
+        const syncAccountState = () => {
+            const active = Boolean(accountEnabled && accountEnabled.checked) && !(requestOnly && requestOnly.checked);
+            setAccountFieldsDisabled(!active);
+            syncCredentialsVisibility();
+        };
+
+        const syncRequestOnlyState = () => {
+            const locked = Boolean(requestOnly && requestOnly.checked);
+            if (accountEnabled) {
+                accountEnabled.disabled = locked;
+                if (locked) accountEnabled.checked = false;
+            }
+            if (basePrice) {
+                basePrice.disabled = locked;
+                if (locked) basePrice.value = '0';
+            }
+            if (locked) {
+                [selfToggle, preToggle].forEach((el) => { if (el) el.checked = false; });
+                setAccountFieldsDisabled(true);
+                if (credentialsRow) credentialsRow.classList.add('hidden');
+            } else {
+                syncAccountState();
+            }
+        };
+
+        if (requestOnly) requestOnly.addEventListener('change', syncRequestOnlyState);
+        if (accountEnabled) accountEnabled.addEventListener('change', syncAccountState);
+        [selfToggle, preToggle].forEach((el) => el && el.addEventListener('change', syncAccountState));
+
+        syncRequestOnlyState();
+        syncAccountState();
+    };
+
+    const clampRowState = (row) => {
+        const id = row.dataset.productRow;
+        const requestOnly = row.querySelector(`[name="request_only-${id}"]`);
+        const accountEnabled = row.querySelector(`[name="account_enabled-${id}"]`);
+        const priceInput = row.querySelector(`[name="price-${id}"]`);
+        const selfToggle = row.querySelector(`[name="self_available-${id}"]`);
+        const preToggle = row.querySelector(`[name="pre_available-${id}"]`);
+        const selfPrice = row.querySelector(`[name="self_price-${id}"]`);
+        const prePrice = row.querySelector(`[name="pre_price-${id}"]`);
+        const reqUsername = row.querySelector(`[name="require_username-${id}"]`);
+        const reqPassword = row.querySelector(`[name="require_password-${id}"]`);
+        const credentialsRow = row.querySelector(`[data-credentials-for="${id}"]`);
+
+        const requestMode = Boolean(requestOnly && requestOnly.checked);
+
+        const setAccountDisabled = (state) => {
+            [selfToggle, preToggle, selfPrice, prePrice, reqUsername, reqPassword].forEach((el) => {
+                if (!el) return;
+                el.disabled = state;
+                if (state && el.type === 'checkbox') el.checked = false;
+            });
+        };
+
+        if (requestOnly) {
+            if (accountEnabled) {
+                accountEnabled.disabled = requestMode;
+                if (requestMode) accountEnabled.checked = false;
+            }
+            if (priceInput) {
+                priceInput.disabled = requestMode;
+                if (requestMode) priceInput.value = '0';
+            }
+        }
+
+        const accountActive = Boolean(accountEnabled && accountEnabled.checked) && !requestMode;
+        setAccountDisabled(!accountActive);
+
+        if (credentialsRow) {
+            const hasAccountChoice = accountActive && ((selfToggle && selfToggle.checked) || (preToggle && preToggle.checked));
+            credentialsRow.classList.toggle('hidden', !hasAccountChoice);
+        }
+    };
+
+    const initBulkGuards = () => {
+        document.querySelectorAll('[data-product-row]').forEach((row) => {
+            const id = row.dataset.productRow;
+            ['request_only', 'account_enabled', 'self_available', 'pre_available'].forEach((name) => {
+                const input = row.querySelector(`[name="${name}-${id}"]`);
+                if (input) input.addEventListener('change', () => clampRowState(row));
+            });
+            clampRowState(row);
         });
     };
 
-    document.querySelectorAll('[data-account-toggle]').forEach((checkbox) => {
-        checkbox.addEventListener('change', syncCredentialRows);
-    });
-
-    syncCredentialRows();
+    initCreateFormGuards();
+    initBulkGuards();
 </script>
 {% endblock %}
