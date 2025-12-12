@@ -53,6 +53,7 @@ async def on_reply_cart(message: Message, state: FSMContext) -> None:
             order.get("service_category", ""),
             order.get("service_code", ""),
             order.get("notes"),
+            order.get("plan_title"),
         )
         amount = int(order.get("amount_total") or 0)
         reserved = int(order.get("wallet_reserved_amount") or 0)

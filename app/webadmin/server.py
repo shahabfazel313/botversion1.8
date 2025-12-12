@@ -416,6 +416,8 @@ def create_admin_app() -> FastAPI:
             pre_available = False
             self_price = 0
             pre_price = 0
+            require_username = False
+            require_password = False
 
         if has_sort_conflict(
             parent_id=parent_id, is_category=is_category, sort_order=sort_order, exclude_id=None
@@ -512,6 +514,8 @@ def create_admin_app() -> FastAPI:
             pre_available = False
             self_price = 0
             pre_price = 0
+            require_username = False
+            require_password = False
 
         if has_sort_conflict(
             parent_id=parent_id, is_category=is_category, sort_order=sort_order, exclude_id=product_id
@@ -635,6 +639,8 @@ def create_admin_app() -> FastAPI:
                 pre_available = False
                 self_price = 0
                 pre_price = 0
+                require_username = False
+                require_password = False
 
             signature = (parent_id, is_category, sort_order)
             if signature in seen_orders:
