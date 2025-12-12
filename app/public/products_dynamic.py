@@ -66,7 +66,7 @@ async def _create_order_and_confirm(
         customer_password=password,
     )
     await message.answer(
-        f"✅ سفارش #{order_id} برای «{product.get('title')}» ایجاد شد و به سبد خرید اضافه گردید.",
+        f"✅ سفارش #{order_id} برای «{product.get('title')}» ثبت شد و به سبد خرید اضافه شد. برای ادامه و پرداخت به سبد خرید مراجعه کنید.",
         reply_markup=reply_main(),
     )
 
@@ -96,9 +96,15 @@ async def _begin_purchase(
         await callback.answer()
         return
 
-    await state.clear()
     require_username = bool(product.get("require_username"))
     require_password = bool(product.get("require_password"))
+    if not (require_username or require_password):
+        await callback.answer(
+            "برای نمایش این سفارش در سبد خرید، دریافت یوزر یا پسورد باید فعال باشد.", show_alert=True
+        )
+        return
+
+    await state.clear()
     account_mode = ""
     if product.get("account_enabled"):
         account_mode = "MY_ACCOUNT" if mode == "self" else "PREBUILT"
