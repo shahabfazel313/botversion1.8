@@ -66,7 +66,7 @@ async def _create_order_and_confirm(
         customer_password=password,
     )
     await message.answer(
-        f"✅ سفارش #{order_id} برای «{product.get('title')}» ایجاد شد و به سبد خرید اضافه گردید.",
+        f"✅ سفارش #{order_id} برای «{product.get('title')}» ثبت شد و به سبد خرید اضافه شد. برای ادامه و پرداخت به سبد خرید مراجعه کنید.",
         reply_markup=reply_main(),
     )
 
