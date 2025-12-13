@@ -71,6 +71,12 @@ async def _create_order_and_confirm(
         customer_username=username,
         customer_password=password,
     )
+    if not order_id:
+        await message.answer(
+            "ثبت سفارش با مشکل مواجه شد. لطفاً دوباره تلاش کنید یا به پشتیبانی اطلاع دهید.",
+            reply_markup=reply_main(),
+        )
+        return
     await message.answer(
         f"✅ سفارش #{order_id} برای «{product.get('title')}» ثبت شد و به سبد خرید اضافه شد. برای ادامه و پرداخت به سبد خرید مراجعه کنید.",
         reply_markup=ik_cart_actions(order_id),
