@@ -540,11 +540,40 @@ def user_has_delivered_order(user_id: int) -> bool:
     return bool(row)
 
 def list_cart_orders(user_id: int):
-    return db_execute("""
+    now = datetime.now()
+    now_iso = now.isoformat(timespec="seconds")
+    rows = db_execute(
+        """
         SELECT * FROM orders
-        WHERE user_id=? AND status='AWAITING_PAYMENT' AND (await_deadline IS NULL OR await_deadline > ?)
+        WHERE user_id=? AND status='AWAITING_PAYMENT' AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
         ORDER BY await_deadline ASC
-    """, (user_id, datetime.now().isoformat(timespec="seconds")), fetchall=True)
+    """,
+        (user_id, now_iso),
+        fetchall=True,
+    )
+
+    missing = [o["id"] for o in rows if not (o.get("await_deadline") or "").strip()]
+    if missing:
+        refreshed_deadline = (now + timedelta(minutes=PAYMENT_TIMEOUT_MIN)).isoformat(
+            timespec="seconds"
+        )
+        updated_at = datetime.now().isoformat(timespec="seconds")
+        for oid in missing:
+            db_execute(
+                "UPDATE orders SET await_deadline=?, updated_at=? WHERE id=?",
+                (refreshed_deadline, updated_at, oid),
+            )
+        rows = db_execute(
+            """
+            SELECT * FROM orders
+            WHERE user_id=? AND status='AWAITING_PAYMENT' AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
+            ORDER BY await_deadline ASC
+        """,
+            (user_id, now_iso),
+            fetchall=True,
+        )
+
+    return rows
 
 def expire_orders_and_refund():
     # سفارش‌های در انتظار پرداخت که ددلاین گذشته

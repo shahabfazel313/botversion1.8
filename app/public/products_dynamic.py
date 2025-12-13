@@ -6,7 +6,13 @@ from . import router
 from .channel_gate import ensure_member_for_message
 from ..config import CURRENCY
 from ..db import create_order, ensure_user, get_user, set_order_customer_message
-from ..keyboards import REPLY_BTN_PRODUCTS, ik_dynamic_products, ik_product_actions, reply_main
+from ..keyboards import (
+    REPLY_BTN_PRODUCTS,
+    ik_cart_actions,
+    ik_dynamic_products,
+    ik_product_actions,
+    reply_main,
+)
 from ..products import find_public_product, list_public_children
 from ..states import CatalogStates
 
@@ -65,9 +71,15 @@ async def _create_order_and_confirm(
         customer_username=username,
         customer_password=password,
     )
+    if not order_id:
+        await message.answer(
+            "ثبت سفارش با مشکل مواجه شد. لطفاً دوباره تلاش کنید یا به پشتیبانی اطلاع دهید.",
+            reply_markup=reply_main(),
+        )
+        return
     await message.answer(
-        f"✅ سفارش #{order_id} برای «{product.get('title')}» ایجاد شد و به سبد خرید اضافه گردید.",
-        reply_markup=reply_main(),
+        f"✅ سفارش #{order_id} برای «{product.get('title')}» ثبت شد و به سبد خرید اضافه شد. برای ادامه و پرداخت به سبد خرید مراجعه کنید.",
+        reply_markup=ik_cart_actions(order_id),
     )
 
 
@@ -96,9 +108,10 @@ async def _begin_purchase(
         await callback.answer()
         return
 
-    await state.clear()
     require_username = bool(product.get("require_username"))
     require_password = bool(product.get("require_password"))
+
+    await state.clear()
     account_mode = ""
     if product.get("account_enabled"):
         account_mode = "MY_ACCOUNT" if mode == "self" else "PREBUILT"

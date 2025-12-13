@@ -34,7 +34,14 @@ def _status_fa(code: str) -> str:
     }.get(code, code)
 
 
-def _order_title(service_category: str, code: str, notes: str | None = None) -> str:
+def _order_title(
+    service_category: str,
+    code: str,
+    notes: str | None = None,
+    plan_title: str | None = None,
+) -> str:
+    if plan_title:
+        return plan_title
     if service_category == "AI":
         return {
             "team": "اکانت ChatGPT Team",
@@ -51,6 +58,8 @@ def _order_title(service_category: str, code: str, notes: str | None = None) -> 
             return "اکانت تلگرام آماده (از پیش ساخته‌شده)"
         if code == "ready_country":
             return "اکانت تلگرام آماده (کشور دلخواه)"
+    if service_category == "CATALOG" and notes:
+        return notes.split("\n", 1)[0].strip() or "سفارش"
     return "سفارش"
 
 
@@ -67,6 +76,7 @@ def _fmt_order_for_user(order: dict[str, Any]) -> str:
         order.get("service_category", ""),
         order.get("service_code", ""),
         order.get("notes"),
+        order.get("plan_title"),
     )
     amount = int(order.get("amount_total") or order.get("price") or 0)
     payment_type = order.get("payment_type") or "—"
