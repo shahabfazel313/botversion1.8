@@ -3,6 +3,8 @@ from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
+import logging
+
 from .config import DB_PATH, ORDER_ID_MIN_VALUE, PAYMENT_TIMEOUT_MIN
 
 def _connect():
@@ -101,6 +103,127 @@ def _col_exists(con, table, col):
     cols = [r[1] for r in cur.fetchall()]
     return col in cols
 
+
+def _get_table_columns(cur, table: str) -> list[str]:
+    cur.execute(f"PRAGMA table_info({table})")
+    return [r[1] for r in cur.fetchall()]
+
+
+def _create_orders_table(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS orders(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, username TEXT, first_name TEXT,
+            plan_id TEXT, plan_title TEXT, price TEXT,
+            receipt_file_id TEXT, receipt_text TEXT,
+            status TEXT, created_at TEXT, updated_at TEXT
+        );
+        """
+    )
+
+
+def _add_missing_columns(con, cur) -> None:
+    add_cols = [
+        ("orders", "service_category", "TEXT"),
+        ("orders", "service_code", "TEXT"),
+        ("orders", "account_mode", "TEXT"),
+        ("orders", "customer_email", "TEXT"),
+        ("orders", "customer_secret_encrypted", "TEXT"),
+        ("orders", "amount_total", "INTEGER"),
+        ("orders", "currency", "TEXT"),
+        ("orders", "payment_type", "TEXT"),
+        ("orders", "wallet_used_amount", "INTEGER DEFAULT 0"),
+        ("orders", "wallet_reserved_amount", "INTEGER DEFAULT 0"),
+        ("orders", "await_deadline", "TEXT"),
+        ("orders", "notes", "TEXT"),
+        ("orders", "customer_message", "TEXT"),
+        ("orders", "manager_note", "TEXT"),
+        ("orders", "internal_cost", "INTEGER DEFAULT 0"),
+        ("orders", "net_revenue", "INTEGER DEFAULT 0"),
+        ("orders", "require_username", "INTEGER DEFAULT 0"),
+        ("orders", "require_password", "INTEGER DEFAULT 0"),
+        ("orders", "customer_username", "TEXT"),
+        ("orders", "customer_password", "TEXT"),
+        ("orders", "allow_first_plan", "INTEGER DEFAULT 0"),
+        ("orders", "cashback_percent", "INTEGER DEFAULT 0"),
+        ("orders", "cashback_applied_amount", "INTEGER DEFAULT 0"),
+        ("orders", "discount_id", "INTEGER"),
+        ("orders", "discount_code", "TEXT"),
+        ("orders", "discount_amount", "INTEGER DEFAULT 0"),
+        # products (جدیدتر؛ برای هم‌ترازی دیتابیس‌های قدیمی)
+        ("products", "description", "TEXT DEFAULT ''"),
+        ("products", "price", "INTEGER DEFAULT 0"),
+        ("products", "available", "INTEGER DEFAULT 1"),
+        ("products", "is_category", "INTEGER DEFAULT 0"),
+        ("products", "request_only", "INTEGER DEFAULT 0"),
+        ("products", "account_enabled", "INTEGER DEFAULT 0"),
+        ("products", "self_available", "INTEGER DEFAULT 0"),
+        ("products", "self_price", "INTEGER DEFAULT 0"),
+        ("products", "pre_available", "INTEGER DEFAULT 0"),
+        ("products", "pre_price", "INTEGER DEFAULT 0"),
+        ("products", "require_username", "INTEGER DEFAULT 0"),
+        ("products", "require_password", "INTEGER DEFAULT 0"),
+        ("products", "allow_first_plan", "INTEGER DEFAULT 0"),
+        ("products", "cashback_enabled", "INTEGER DEFAULT 0"),
+        ("products", "cashback_percent", "INTEGER DEFAULT 0"),
+        ("products", "sort_order", "INTEGER DEFAULT 0"),
+        ("products", "created_at", "TEXT"),
+        ("products", "updated_at", "TEXT"),
+        ("users", "contact_phone", "TEXT"),
+        ("users", "contact_verified", "INTEGER DEFAULT 0"),
+        ("users", "contact_shared_at", "TEXT"),
+        ("users", "is_blocked", "INTEGER DEFAULT 0"),
+        ("service_messages", "updated_at", "TEXT"),
+        ("coupons", "is_active", "INTEGER DEFAULT 1"),
+        ("coupons", "usage_limit_per_user", "INTEGER DEFAULT 1"),
+        ("coupon_redemptions", "times_used", "INTEGER DEFAULT 1"),
+    ]
+    for t, c, typ in add_cols:
+        if _table_exists(con, t) and not _col_exists(con, t, c):
+            cur.execute(f"ALTER TABLE {t} ADD COLUMN {c} {typ};")
+
+
+def _ensure_orders_have_id(con, cur) -> None:
+    """Migrate legacy ``orders`` tables that lack the ``id`` column."""
+
+    if not _table_exists(con, "orders"):
+        return
+    cols = _get_table_columns(cur, "orders")
+    if "id" in cols:
+        return
+
+    logging.info("Migrating orders table to add id column")
+    cur.execute("ALTER TABLE orders RENAME TO orders_old;")
+    _create_orders_table(cur)
+    _add_missing_columns(con, cur)
+
+    old_cols = set(_get_table_columns(cur, "orders_old"))
+    new_cols = _get_table_columns(cur, "orders")
+
+    dest_cols: list[str] = []
+    select_cols: list[str] = []
+
+    if "id" in new_cols:
+        dest_cols.append("id")
+        select_cols.append("rowid")
+
+    for col in new_cols:
+        if col == "id" or col not in old_cols:
+            continue
+        dest_cols.append(col)
+        select_cols.append(col)
+
+    if dest_cols:
+        cols_sql = ",".join(dest_cols)
+        select_sql = ",".join(select_cols)
+        cur.execute(
+            f"INSERT INTO orders ({cols_sql}) SELECT {select_sql} FROM orders_old;"
+        )
+
+    cur.execute("DROP TABLE orders_old;")
+    con.commit()
+
 def init_db():
     with closing(_connect()) as con:
         cur = con.cursor()
@@ -116,15 +239,8 @@ def init_db():
         );
         """)
         # orders (افزودن ستون‌ها اگر نبودند)
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS orders(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, username TEXT, first_name TEXT,
-            plan_id TEXT, plan_title TEXT, price TEXT,
-            receipt_file_id TEXT, receipt_text TEXT,
-            status TEXT, created_at TEXT, updated_at TEXT
-        );
-        """)
+        _create_orders_table(cur)
+        _ensure_orders_have_id(con, cur)
         # products catalog
         cur.execute(
             """
@@ -173,65 +289,7 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_service_messages_category ON service_messages(category);"
         )
 
-        # ارتقا
-        add_cols = [
-            ("orders", "service_category", "TEXT"),
-            ("orders", "service_code", "TEXT"),
-            ("orders", "account_mode", "TEXT"),
-            ("orders", "customer_email", "TEXT"),
-            ("orders", "customer_secret_encrypted", "TEXT"),
-            ("orders", "amount_total", "INTEGER"),
-            ("orders", "currency", "TEXT"),
-            ("orders", "payment_type", "TEXT"),
-            ("orders", "wallet_used_amount", "INTEGER DEFAULT 0"),
-            ("orders", "wallet_reserved_amount", "INTEGER DEFAULT 0"),
-            ("orders", "await_deadline", "TEXT"),
-            ("orders", "notes", "TEXT"),
-            ("orders", "customer_message", "TEXT"),
-            ("orders", "manager_note", "TEXT"),
-            ("orders", "internal_cost", "INTEGER DEFAULT 0"),
-            ("orders", "net_revenue", "INTEGER DEFAULT 0"),
-            ("orders", "require_username", "INTEGER DEFAULT 0"),
-            ("orders", "require_password", "INTEGER DEFAULT 0"),
-            ("orders", "customer_username", "TEXT"),
-            ("orders", "customer_password", "TEXT"),
-            ("orders", "allow_first_plan", "INTEGER DEFAULT 0"),
-            ("orders", "cashback_percent", "INTEGER DEFAULT 0"),
-            ("orders", "cashback_applied_amount", "INTEGER DEFAULT 0"),
-            ("orders", "discount_id", "INTEGER"),
-            ("orders", "discount_code", "TEXT"),
-            ("orders", "discount_amount", "INTEGER DEFAULT 0"),
-            # products (جدیدتر؛ برای هم‌ترازی دیتابیس‌های قدیمی)
-            ("products", "description", "TEXT DEFAULT ''"),
-            ("products", "price", "INTEGER DEFAULT 0"),
-            ("products", "available", "INTEGER DEFAULT 1"),
-            ("products", "is_category", "INTEGER DEFAULT 0"),
-            ("products", "request_only", "INTEGER DEFAULT 0"),
-            ("products", "account_enabled", "INTEGER DEFAULT 0"),
-            ("products", "self_available", "INTEGER DEFAULT 0"),
-            ("products", "self_price", "INTEGER DEFAULT 0"),
-            ("products", "pre_available", "INTEGER DEFAULT 0"),
-            ("products", "pre_price", "INTEGER DEFAULT 0"),
-            ("products", "require_username", "INTEGER DEFAULT 0"),
-            ("products", "require_password", "INTEGER DEFAULT 0"),
-            ("products", "allow_first_plan", "INTEGER DEFAULT 0"),
-            ("products", "cashback_enabled", "INTEGER DEFAULT 0"),
-            ("products", "cashback_percent", "INTEGER DEFAULT 0"),
-            ("products", "sort_order", "INTEGER DEFAULT 0"),
-            ("products", "created_at", "TEXT"),
-            ("products", "updated_at", "TEXT"),
-            ("users", "contact_phone", "TEXT"),
-            ("users", "contact_verified", "INTEGER DEFAULT 0"),
-            ("users", "contact_shared_at", "TEXT"),
-            ("users", "is_blocked", "INTEGER DEFAULT 0"),
-            ("service_messages", "updated_at", "TEXT"),
-            ("coupons", "is_active", "INTEGER DEFAULT 1"),
-            ("coupons", "usage_limit_per_user", "INTEGER DEFAULT 1"),
-            ("coupon_redemptions", "times_used", "INTEGER DEFAULT 1"),
-        ]
-        for t, c, typ in add_cols:
-            if _table_exists(con, t) and not _col_exists(con, t, c):
-                cur.execute(f"ALTER TABLE {t} ADD COLUMN {c} {typ};")
+        _add_missing_columns(con, cur)
 
         # ensure schema changes are persisted before closing the connection
         con.commit()
@@ -363,7 +421,6 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 discount_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
-                order_id INTEGER,
                 amount INTEGER NOT NULL,
                 times_used INTEGER DEFAULT 1,
                 redeemed_at TEXT,
@@ -378,7 +435,7 @@ def init_db():
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_discount_redemptions_user ON discount_redemptions(user_id);"
         )
-        con.commit()
+
 
 def ensure_user(user_id: int, username: str, first_name: str):
     now = datetime.now().isoformat(timespec="seconds")
@@ -386,13 +443,14 @@ def ensure_user(user_id: int, username: str, first_name: str):
     if not row:
         db_execute(
             "INSERT INTO users(user_id, username, first_name, created_at, updated_at) VALUES(?,?,?,?,?)",
-            (user_id, username, first_name or "", now, now)
+            (user_id, username, first_name or "", now, now),
         )
     else:
         db_execute(
             "UPDATE users SET username=?, first_name=?, updated_at=? WHERE user_id=?",
             (username, first_name or "", now, user_id),
         )
+
 
 def get_user(user_id: int):
     return db_execute("SELECT * FROM users WHERE user_id=?", (user_id,), fetchone=True)
@@ -471,7 +529,7 @@ def create_order(
             customer_username, customer_password,
             allow_first_plan, cashback_percent,
             discount_id, discount_code, discount_amount
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         user["user_id"], user["username"], user["first_name"] or "",
         None, title, str(amount_total),
