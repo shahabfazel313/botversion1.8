@@ -734,11 +734,18 @@ def user_has_delivered_order(user_id: int) -> bool:
     )
     return bool(row)
 
-def _normalize_cart_orders(user_id: int, order_id: int | None = None):
+def _normalize_status_for_cart(raw_status: str | None) -> str:
+    status = (raw_status or "").strip()
+    if status in {"", "در انتظار پرداخت"}:
+        return "AWAITING_PAYMENT"
+    return status.upper()
+
+
+def _hydrate_cart_orders(user_id: int, order_id: int | None = None) -> list[dict]:
     now = datetime.now()
     now_iso = now.isoformat(timespec="seconds")
 
-    filters = ["user_id=?", "status IN ('AWAITING_PAYMENT','PENDING_CONFIRM','', 'در انتظار پرداخت')"]
+    filters = ["user_id=?"]
     params: list[int | str] = [user_id]
     if order_id:
         filters.append("id=?")
@@ -748,39 +755,48 @@ def _normalize_cart_orders(user_id: int, order_id: int | None = None):
         f"""
         SELECT * FROM orders
         WHERE {' AND '.join(filters)}
+          AND status NOT IN ('CANCELED','REJECTED','COMPLETED','DELIVERED','EXPIRED')
+        ORDER BY created_at DESC
         """,
         tuple(params),
         fetchall=True,
     ) or []
 
-    valid_ids: list[int] = []
-    for o in candidates:
-        oid = int(o.get("id"))
-        status = (o.get("status") or "").strip()
-        if status in {"", "در انتظار پرداخت"}:
-            set_order_status(oid, "AWAITING_PAYMENT")
-            o["status"] = "AWAITING_PAYMENT"
-        elif status not in {"AWAITING_PAYMENT", "PENDING_CONFIRM"}:
+    hydrated: list[dict] = []
+    for row in candidates:
+        oid = int(row.get("id"))
+        normalized_status = _normalize_status_for_cart(row.get("status"))
+
+        if normalized_status != row.get("status"):
+            set_order_status(oid, normalized_status)
+            row["status"] = normalized_status
+
+        if normalized_status not in {"AWAITING_PAYMENT", "PENDING_CONFIRM"}:
             continue
 
-        deadline_raw = (o.get("await_deadline") or "").strip()
+        deadline_raw = (row.get("await_deadline") or "").strip()
         if not deadline_raw:
             deadline_raw = refresh_order_deadline(oid)
-            o["await_deadline"] = deadline_raw
+            row["await_deadline"] = deadline_raw
+
         try:
-            if deadline_raw and datetime.fromisoformat(deadline_raw) <= now:
-                set_order_status(oid, "EXPIRED")
-                continue
+            expired = bool(deadline_raw and datetime.fromisoformat(deadline_raw) <= now)
         except ValueError:
             deadline_raw = refresh_order_deadline(oid)
-            o["await_deadline"] = deadline_raw
+            row["await_deadline"] = deadline_raw
+            expired = False
 
-        valid_ids.append(oid)
+        if expired:
+            set_order_status(oid, "EXPIRED")
+            continue
 
-    if not valid_ids:
+        hydrated.append(row)
+
+    if not hydrated:
         return []
 
-    placeholders = ",".join("?" for _ in valid_ids)
+    placeholders = ",".join("?" for _ in hydrated)
+    hydrated_ids = [int(o["id"]) for o in hydrated]
     return db_execute(
         f"""
         SELECT * FROM orders
@@ -788,17 +804,17 @@ def _normalize_cart_orders(user_id: int, order_id: int | None = None):
           AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
         ORDER BY await_deadline ASC
         """,
-        (*valid_ids, now_iso),
+        (*hydrated_ids, now_iso),
         fetchall=True,
-    )
+    ) or []
 
 
 def list_cart_orders(user_id: int):
-    return _normalize_cart_orders(user_id)
+    return _hydrate_cart_orders(user_id)
 
 
 def get_cart_order(order_id: int, user_id: int):
-    orders = _normalize_cart_orders(user_id, order_id)
+    orders = _hydrate_cart_orders(user_id, order_id)
     return orders[0] if orders else None
 
 def expire_orders_and_refund():
