@@ -1,4 +1,6 @@
 import os
+import os
+
 from dotenv import load_dotenv
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -94,3 +96,6 @@ ADMIN_WEB_PASS = os.getenv("ADMIN_WEB_PASS", "admin")
 ADMIN_WEB_BIND = os.getenv("ADMIN_WEB_BIND", "127.0.0.1")
 ADMIN_WEB_PORT = int(os.getenv("ADMIN_WEB_PORT", "8080"))
 ADMIN_WEB_SECRET = os.getenv("ADMIN_WEB_SECRET", BOT_TOKEN[::-1] + "_secret")
+
+# --- Logging ---
+LOG_FILE = os.getenv("LOG_FILE", os.path.join(os.getcwd(), "logs", "bot.log"))

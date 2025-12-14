@@ -70,6 +70,9 @@ async def _create_order_and_confirm(
         require_password=bool(product.get("require_password")),
         customer_username=username,
         customer_password=password,
+        allow_first_plan=bool(product.get("allow_first_plan")),
+        cashback_percent=(product.get("cashback_percent") if product.get("cashback_enabled") else 0) or 0,
+        allow_free=price <= 0,
     )
     if not order_id:
         await message.answer(
@@ -104,9 +107,7 @@ async def _begin_purchase(
         await callback.answer("این گزینه فعلاً موجود نیست.", show_alert=True)
         return
     if price <= 0:
-        await callback.message.answer("قیمت این سرویس هنوز تنظیم نشده است.", reply_markup=reply_main())
-        await callback.answer()
-        return
+        await callback.message.answer("قیمت این سرویس صفر است و به‌صورت رایگان ثبت می‌شود.")
 
     require_username = bool(product.get("require_username"))
     require_password = bool(product.get("require_password"))

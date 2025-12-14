@@ -11,7 +11,10 @@
         <label>مبلغ (تومان)
             <input type="number" name="amount" min="1" required>
         </label>
-        <label>تعداد قابل استفاده
+        <label>تعداد قابل استفاده برای هر نفر
+            <input type="number" name="usage_limit_per_user" min="1" value="1" required>
+        </label>
+        <label>تعداد قابل استفاده کلی
             <input type="number" name="usage_limit" min="1" required>
         </label>
         <label>تاریخ انقضا
@@ -29,12 +32,12 @@
             <tr>
                 <th>کد</th>
                 <th>مبلغ</th>
-                <th>استفاده‌شده / مجاز</th>
-                <th>کاربران استفاده‌کننده</th>
+                <th>سقف هر کاربر</th>
+                <th>استفاده‌شده / ظرفیت کلی</th>
                 <th>انقضا</th>
                 <th>وضعیت</th>
-                <th>تغییر وضعیت</th>
-                <th>ویرایش</th>
+                <th>کاربران</th>
+                <th>مدیریت</th>
             </tr>
         </thead>
         <tbody>
@@ -42,18 +45,8 @@
             <tr>
                 <td><strong>{{ coupon.code }}</strong></td>
                 <td>{{ format_amount(coupon.amount) }} تومان</td>
+                <td>{{ coupon.usage_limit_per_user }}</td>
                 <td>{{ coupon.used_count }} / {{ coupon.usage_limit }}</td>
-                <td>
-                    {% if coupon.redeemed_users %}
-                        <div class="tag-row">
-                            {% for uid in coupon.redeemed_users %}
-                                <span class="badge">#{{ uid }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        —
-                    {% endif %}
-                </td>
                 <td>
                     {% if coupon.expires_at %}
                         {{ format_datetime(coupon.expires_at) }}
@@ -73,22 +66,29 @@
                     {% endif %}
                 </td>
                 <td>
-                    <form method="post" action="{{ url_for('coupon_toggle', coupon_id=coupon.id) }}">
-                        {% if coupon.is_active %}
-                            <button type="submit" class="btn-ghost danger">غیرفعال کردن</button>
-                        {% else %}
-                            <button type="submit" class="btn-ghost">فعال کردن</button>
-                        {% endif %}
-                    </form>
+                    <a class="btn-ghost" href="{{ url_for('coupon_redemptions_page', coupon_id=coupon.id) }}">مشاهده</a>
                 </td>
                 <td>
                     <form method="post" action="{{ url_for('coupon_update', coupon_id=coupon.id) }}" class="form-inline">
                         <input type="text" name="code" value="{{ coupon.code }}" required>
                         <input type="number" name="amount" min="1" value="{{ coupon.amount }}" required>
+                        <input type="number" name="usage_limit_per_user" min="1" value="{{ coupon.usage_limit_per_user }}" required>
                         <input type="number" name="usage_limit" min="{{ coupon.used_count if coupon.used_count else 1 }}" value="{{ coupon.usage_limit }}" required>
                         <input type="date" name="expires_on" value="{{ coupon.expires_value }}">
                         <button type="submit" class="btn-secondary">ذخیره</button>
                     </form>
+                    <div class="action-row">
+                        <form method="post" action="{{ url_for('coupon_toggle', coupon_id=coupon.id) }}">
+                            {% if coupon.is_active %}
+                                <button type="submit" class="btn-ghost danger">غیرفعال کردن</button>
+                            {% else %}
+                                <button type="submit" class="btn-ghost">فعال کردن</button>
+                            {% endif %}
+                        </form>
+                        <form method="post" action="{{ url_for('coupon_delete', coupon_id=coupon.id) }}" onsubmit="return confirm('حذف این کد تخفیف قطعی است. ادامه می‌دهید؟');">
+                            <button type="submit" class="btn-ghost danger">حذف</button>
+                        </form>
+                    </div>
                 </td>
             </tr>
             {% else %}
