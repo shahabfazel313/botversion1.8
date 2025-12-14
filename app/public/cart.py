@@ -1,5 +1,7 @@
 from aiogram import F
 from aiogram.fsm.context import FSMContext
+from datetime import datetime
+
 from aiogram.types import CallbackQuery, Message
 
 from . import router
@@ -19,6 +21,7 @@ from ..db import (
     set_order_wallet_reserved,
     set_order_wallet_used,
     user_has_delivered_order,
+    refresh_order_deadline,
 )
 from ..keyboards import (
     ik_card_receipt_prompt,
@@ -32,6 +35,40 @@ from ..keyboards import (
 )
 from ..states import CheckoutStates, VerifyStates
 from ..utils import mention
+
+
+def _load_payable_order(order_id: int, user_id: int) -> dict | None:
+    order = get_order(order_id)
+    if not order or order.get("user_id") != user_id:
+        return None
+
+    status = (order.get("status") or "").strip()
+    if status in {"", "در انتظار پرداخت"}:
+        set_order_status(order_id, "AWAITING_PAYMENT")
+        order = get_order(order_id)
+        status = (order.get("status") or "") if order else ""
+
+    if not order or order.get("status") != "AWAITING_PAYMENT":
+        return None
+
+    deadline_raw = (order.get("await_deadline") or "").strip()
+    if not deadline_raw:
+        refresh_order_deadline(order_id)
+        order = get_order(order_id)
+        deadline_raw = (order.get("await_deadline") or "").strip() if order else ""
+
+    if not order:
+        return None
+
+    if deadline_raw:
+        try:
+            if datetime.fromisoformat(deadline_raw) <= datetime.now():
+                return None
+        except ValueError:
+            refresh_order_deadline(order_id)
+            order = get_order(order_id)
+
+    return order
 
 
 async def _require_contact_verification(callback: CallbackQuery, state: FSMContext) -> bool:
@@ -65,8 +102,8 @@ async def _continue_payment(callback: CallbackQuery, state: FSMContext) -> None:
     pending = data.get("pending_payment") or {}
     order_id = int(pending.get("order_id") or 0)
     method = pending.get("method")
-    order = get_order(order_id)
-    if not order or order.get("user_id") != callback.from_user.id or order.get("status") != "AWAITING_PAYMENT":
+    order = _load_payable_order(order_id, callback.from_user.id)
+    if not order:
         await callback.answer("سفارش قابل ادامه نیست.", show_alert=True)
         await state.clear()
         return
@@ -143,8 +180,8 @@ async def cb_cart_paycard(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _require_contact_verification(callback, state):
         return
     order_id = int(callback.data.split(":")[2])
-    order = get_order(order_id)
-    if not order or order["user_id"] != callback.from_user.id or order["status"] != "AWAITING_PAYMENT":
+    order = _load_payable_order(order_id, callback.from_user.id)
+    if not order:
         await callback.answer("سفارش نامعتبر یا منقضی است.", show_alert=True)
         return
     await _prompt_discount(callback, state, order_id, "CARD")
@@ -296,8 +333,8 @@ async def cb_cart_paywallet(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _require_contact_verification(callback, state):
         return
     order_id = int(callback.data.split(":")[2])
-    order = get_order(order_id)
-    if not order or order["user_id"] != callback.from_user.id or order["status"] != "AWAITING_PAYMENT":
+    order = _load_payable_order(order_id, callback.from_user.id)
+    if not order:
         await callback.answer("سفارش نامعتبر یا منقضی است.", show_alert=True)
         return
     await _prompt_discount(callback, state, order_id, "WALLET")
@@ -332,8 +369,8 @@ async def cb_wallet_confirm(callback: CallbackQuery, state: FSMContext) -> None:
     if not current or int(current) != order_id:
         await callback.answer("پرداخت کیف پول برای این سفارش فعال نیست.", show_alert=True)
         return
-    order = get_order(order_id)
-    if not order or order["user_id"] != callback.from_user.id or order["status"] != "AWAITING_PAYMENT":
+    order = _load_payable_order(order_id, callback.from_user.id)
+    if not order:
         await callback.answer("سفارش قابل پرداخت نیست.", show_alert=True)
         await state.clear()
         return
@@ -369,8 +406,8 @@ async def cb_cart_payplan(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _require_contact_verification(callback, state):
         return
     order_id = int(callback.data.split(":")[2])
-    order = get_order(order_id)
-    if not order or order["user_id"] != callback.from_user.id or order["status"] != "AWAITING_PAYMENT":
+    order = _load_payable_order(order_id, callback.from_user.id)
+    if not order:
         await callback.answer("سفارش نامعتبر یا منقضی است.", show_alert=True)
         return
     allow_plan = order.get("service_category") == "AI" or bool(order.get("allow_first_plan"))
@@ -443,8 +480,8 @@ async def cb_plan_confirm(callback: CallbackQuery, state: FSMContext) -> None:
     if not current or int(current) != order_id:
         await callback.answer("طرح خرید اول برای این سفارش فعال نیست.", show_alert=True)
         return
-    order = get_order(order_id)
-    if not order or order["user_id"] != callback.from_user.id or order["status"] != "AWAITING_PAYMENT":
+    order = _load_payable_order(order_id, callback.from_user.id)
+    if not order:
         await callback.answer("سفارش یافت نشد یا منقضی شده است.", show_alert=True)
         await state.clear()
         return
@@ -485,8 +522,8 @@ async def cb_cart_paymix(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _require_contact_verification(callback, state):
         return
     order_id = int(callback.data.split(":")[2])
-    order = get_order(order_id)
-    if not order or order["user_id"] != callback.from_user.id or order["status"] != "AWAITING_PAYMENT":
+    order = _load_payable_order(order_id, callback.from_user.id)
+    if not order:
         await callback.answer("سفارش نامعتبر یا منقضی است.", show_alert=True)
         return
     await _prompt_discount(callback, state, order_id, "MIXED")
@@ -567,8 +604,8 @@ async def on_mixed_amount(message: Message, state: FSMContext) -> None:
     amt_wallet = int(text)
     data = await state.get_data()
     order_id = int(data.get("mixed_for"))
-    order = get_order(order_id)
-    if not order or order["user_id"] != message.from_user.id or order["status"] != "AWAITING_PAYMENT":
+    order = _load_payable_order(order_id, message.from_user.id)
+    if not order:
         await message.answer("سفارش نامعتبر یا منقضی است.", reply_markup=reply_main())
         await state.clear()
         return

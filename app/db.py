@@ -486,6 +486,18 @@ def change_wallet(user_id: int, delta: int, tx_type: str, note: str = "", order_
     )
     return True
 
+
+def refresh_order_deadline(order_id: int, minutes: int | None = None) -> str:
+    if minutes is None:
+        minutes = PAYMENT_TIMEOUT_MIN
+    now = datetime.now()
+    refreshed_deadline = (now + timedelta(minutes=minutes)).isoformat(timespec="seconds")
+    db_execute(
+        "UPDATE orders SET await_deadline=?, updated_at=? WHERE id=?",
+        (refreshed_deadline, now.isoformat(timespec="seconds"), order_id),
+    )
+    return refreshed_deadline
+
 def create_order(
     user,
     title: str,
