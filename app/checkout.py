@@ -61,5 +61,5 @@ async def send_checkout_prompt(msg: Message, order_id: int):
         f"وضعیت: <b>{status}</b>\n\n"
         f"برای ادامه، روش پرداخت را انتخاب کنید:"
     )
-    enable_plan = o.get("service_category") == "AI"
+    enable_plan = bool(o.get("allow_first_plan")) or o.get("service_category") == "AI"
     await msg.answer(text, reply_markup=_kb_checkout(o["id"], enable_plan=enable_plan))

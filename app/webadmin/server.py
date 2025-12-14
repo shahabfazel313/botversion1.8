@@ -388,6 +388,12 @@ def create_admin_app() -> FastAPI:
             pre_price = 0
         require_username = form.get("require_username") == "on"
         require_password = form.get("require_password") == "on"
+        allow_first_plan = form.get("allow_first_plan") == "on"
+        cashback_enabled = form.get("cashback_enabled") == "on"
+        try:
+            cashback_percent = int(form.get("cashback_percent") or 0)
+        except ValueError:
+            cashback_percent = 0
 
         if not title:
             _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
@@ -418,6 +424,12 @@ def create_admin_app() -> FastAPI:
             pre_price = 0
             require_username = False
             require_password = False
+            allow_first_plan = False
+            cashback_enabled = False
+            cashback_percent = 0
+            allow_first_plan = False
+            cashback_enabled = False
+            cashback_percent = 0
 
         if has_sort_conflict(
             parent_id=parent_id, is_category=is_category, sort_order=sort_order, exclude_id=None
@@ -476,6 +488,8 @@ def create_admin_app() -> FastAPI:
         pre_available = form.get("pre_available") == "on"
         require_username = form.get("require_username") == "on"
         require_password = form.get("require_password") == "on"
+        allow_first_plan = form.get("allow_first_plan") == "on"
+        cashback_enabled = form.get("cashback_enabled") == "on"
         try:
             self_price = int(form.get("self_price") or 0)
         except ValueError:
@@ -484,6 +498,10 @@ def create_admin_app() -> FastAPI:
             pre_price = int(form.get("pre_price") or 0)
         except ValueError:
             pre_price = 0
+        try:
+            cashback_percent = int(form.get("cashback_percent") or 0)
+        except ValueError:
+            cashback_percent = 0
 
         if not title:
             _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
@@ -501,6 +519,9 @@ def create_admin_app() -> FastAPI:
             pre_price = 0
             require_username = False
             require_password = False
+            allow_first_plan = False
+            cashback_enabled = False
+            cashback_percent = 0
         elif parent_id:
             parent = get_product(parent_id)
             if not parent or not parent.get("is_category"):
@@ -539,6 +560,9 @@ def create_admin_app() -> FastAPI:
             pre_price=pre_price,
             require_username=require_username,
             require_password=require_password,
+            allow_first_plan=allow_first_plan,
+            cashback_enabled=cashback_enabled,
+            cashback_percent=cashback_percent,
             sort_order=sort_order,
         )
         if not ok:
@@ -597,6 +621,8 @@ def create_admin_app() -> FastAPI:
             pre_available = form.get(f"pre_available-{pid}") == "on"
             require_username = form.get(f"require_username-{pid}") == "on"
             require_password = form.get(f"require_password-{pid}") == "on"
+            allow_first_plan = form.get(f"allow_first_plan-{pid}") == "on"
+            cashback_enabled = form.get(f"cashback_enabled-{pid}") == "on"
             try:
                 self_price = int(form.get(f"self_price-{pid}") or 0)
             except ValueError:
@@ -605,6 +631,10 @@ def create_admin_app() -> FastAPI:
                 pre_price = int(form.get(f"pre_price-{pid}") or 0)
             except ValueError:
                 pre_price = 0
+            try:
+                cashback_percent = int(form.get(f"cashback_percent-{pid}") or 0)
+            except ValueError:
+                cashback_percent = 0
 
             if not title:
                 _flash(request, f"نام برای ردیف #{pid} خالی است.", "error")
@@ -626,6 +656,9 @@ def create_admin_app() -> FastAPI:
                 pre_price = 0
                 require_username = False
                 require_password = False
+                allow_first_plan = False
+                cashback_enabled = False
+                cashback_percent = 0
             elif parent_id:
                 parent = get_product(parent_id)
                 if not parent or not parent.get("is_category"):
@@ -641,6 +674,9 @@ def create_admin_app() -> FastAPI:
                 pre_price = 0
                 require_username = False
                 require_password = False
+                allow_first_plan = False
+                cashback_enabled = False
+                cashback_percent = 0
 
             signature = (parent_id, is_category, sort_order)
             if signature in seen_orders:
@@ -671,6 +707,9 @@ def create_admin_app() -> FastAPI:
                     pre_price=pre_price,
                     require_username=require_username,
                     require_password=require_password,
+                    allow_first_plan=allow_first_plan,
+                    cashback_enabled=cashback_enabled,
+                    cashback_percent=cashback_percent,
                 )
             )
 
@@ -690,6 +729,9 @@ def create_admin_app() -> FastAPI:
                 pre_price=payload["pre_price"],
                 require_username=payload["require_username"],
                 require_password=payload["require_password"],
+                allow_first_plan=payload["allow_first_plan"],
+                cashback_enabled=payload["cashback_enabled"],
+                cashback_percent=payload["cashback_percent"],
                 sort_order=payload["sort_order"],
             )
 
