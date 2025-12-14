@@ -104,6 +104,21 @@
             </label>
             <span class="hint-inline">در صورت فعال بودن (به جز حالت «فقط ثبت درخواست») از مشتری پرسیده می‌شوند.</span>
         </div>
+        <div class="inline-fields">
+            <label class="checkbox">
+                <input type="checkbox" name="allow_first_plan">
+                فعال‌سازی طرح خرید اول برای این محصول
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" name="cashback_enabled" id="cashback-enabled-new">
+                کش‌بک کیف پول فعال باشد
+            </label>
+            <label>
+                درصد کش‌بک
+                <input type="number" name="cashback_percent" value="0" min="0" max="100" data-cashback-input="new">
+            </label>
+            <span class="hint-inline">در صورت فعال بودن کش‌بک، این درصد از مبلغ به کیف پول کاربر واریز می‌شود.</span>
+        </div>
         <label class="full">
             توضیحات
             <textarea name="description" rows="3" placeholder="توضیح کوتاه برای صفحهٔ محصول"></textarea>
@@ -203,6 +218,20 @@
                                 </label>
                                 <span class="hint-inline">هنگام خرید در بات نمایش داده می‌شود.</span>
                             </div>
+                            <div class="inline-fields">
+                                <label class="checkbox">
+                                    <input type="checkbox" name="allow_first_plan-{{ item.id }}" {% if item.allow_first_plan %}checked{% endif %}>
+                                    طرح خرید اول فعال باشد
+                                </label>
+                                <label class="checkbox">
+                                    <input type="checkbox" name="cashback_enabled-{{ item.id }}" {% if item.cashback_enabled %}checked{% endif %} data-cashback-toggle="{{ item.id }}">
+                                    کش‌بک کیف پول
+                                </label>
+                                <label>
+                                    درصد کش‌بک
+                                    <input type="number" name="cashback_percent-{{ item.id }}" value="{{ item.cashback_percent }}" min="0" max="100" data-cashback-input="{{ item.id }}">
+                                </label>
+                            </div>
                             {% endif %}
                         </div>
                     </td>
@@ -250,6 +279,8 @@
         const reqUsername = form.querySelector('#require-username');
         const reqPassword = form.querySelector('#require-password');
         const credentialsRow = form.querySelector('[data-credentials-for="new"]');
+        const cashbackToggle = form.querySelector('#cashback-enabled-new');
+        const cashbackInput = form.querySelector('[data-cashback-input="new"]');
 
         const syncRequestOnlyState = () => {
             const locked = Boolean(requestOnly && requestOnly.checked);
@@ -267,9 +298,20 @@
                 if (locked && el.type === 'checkbox') el.checked = false;
             });
             if (credentialsRow) credentialsRow.classList.toggle('hidden', locked);
+            if (cashbackToggle) cashbackToggle.disabled = locked;
+            if (cashbackInput) {
+                cashbackInput.disabled = locked || !(cashbackToggle && cashbackToggle.checked);
+                if (locked) cashbackInput.value = '0';
+            }
         };
 
         if (requestOnly) requestOnly.addEventListener('change', syncRequestOnlyState);
+        if (cashbackToggle) cashbackToggle.addEventListener('change', () => {
+            if (cashbackInput) {
+                cashbackInput.disabled = !cashbackToggle.checked;
+                if (!cashbackToggle.checked) cashbackInput.value = '0';
+            }
+        });
 
         syncRequestOnlyState();
     };
@@ -286,6 +328,8 @@
         const reqUsername = row.querySelector(`[name="require_username-${id}"]`);
         const reqPassword = row.querySelector(`[name="require_password-${id}"]`);
         const credentialsRow = row.querySelector(`[data-credentials-for="${id}"]`);
+        const cashbackToggle = row.querySelector(`[data-cashback-toggle="${id}"]`);
+        const cashbackInput = row.querySelector(`[data-cashback-input="${id}"]`);
 
         const requestMode = Boolean(requestOnly && requestOnly.checked);
 
@@ -311,6 +355,11 @@
         });
 
         if (credentialsRow) credentialsRow.classList.toggle('hidden', requestMode);
+        if (cashbackToggle) cashbackToggle.disabled = requestMode;
+        if (cashbackInput) {
+            cashbackInput.disabled = requestMode || !(cashbackToggle && cashbackToggle.checked);
+            if (requestMode) cashbackInput.value = '0';
+        }
     };
 
     const initBulkGuards = () => {

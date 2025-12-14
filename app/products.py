@@ -23,9 +23,12 @@ def _normalize_item(raw: dict) -> dict:
     item["pre_available"] = bool(item.get("pre_available"))
     item["require_username"] = bool(item.get("require_username"))
     item["require_password"] = bool(item.get("require_password"))
+    item["allow_first_plan"] = bool(item.get("allow_first_plan"))
+    item["cashback_enabled"] = bool(item.get("cashback_enabled"))
     item["price"] = int(item.get("price") or 0)
     item["self_price"] = int(item.get("self_price") or 0)
     item["pre_price"] = int(item.get("pre_price") or 0)
+    item["cashback_percent"] = int(item.get("cashback_percent") or 0)
     if item["self_available"] or item["pre_available"]:
         item["account_enabled"] = True
     return item

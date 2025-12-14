@@ -195,6 +195,9 @@ def init_db():
             ("orders", "require_password", "INTEGER DEFAULT 0"),
             ("orders", "customer_username", "TEXT"),
             ("orders", "customer_password", "TEXT"),
+            ("orders", "allow_first_plan", "INTEGER DEFAULT 0"),
+            ("orders", "cashback_percent", "INTEGER DEFAULT 0"),
+            ("orders", "cashback_applied_amount", "INTEGER DEFAULT 0"),
             # products (جدیدتر؛ برای هم‌ترازی دیتابیس‌های قدیمی)
             ("products", "description", "TEXT DEFAULT ''"),
             ("products", "price", "INTEGER DEFAULT 0"),
@@ -208,6 +211,9 @@ def init_db():
             ("products", "pre_price", "INTEGER DEFAULT 0"),
             ("products", "require_username", "INTEGER DEFAULT 0"),
             ("products", "require_password", "INTEGER DEFAULT 0"),
+            ("products", "allow_first_plan", "INTEGER DEFAULT 0"),
+            ("products", "cashback_enabled", "INTEGER DEFAULT 0"),
+            ("products", "cashback_percent", "INTEGER DEFAULT 0"),
             ("products", "sort_order", "INTEGER DEFAULT 0"),
             ("products", "created_at", "TEXT"),
             ("products", "updated_at", "TEXT"),
@@ -217,6 +223,8 @@ def init_db():
             ("users", "is_blocked", "INTEGER DEFAULT 0"),
             ("service_messages", "updated_at", "TEXT"),
             ("coupons", "is_active", "INTEGER DEFAULT 1"),
+            ("coupons", "usage_limit_per_user", "INTEGER DEFAULT 1"),
+            ("coupon_redemptions", "times_used", "INTEGER DEFAULT 1"),
         ]
         for t, c, typ in add_cols:
             if _table_exists(con, t) and not _col_exists(con, t, c):
@@ -297,6 +305,7 @@ def init_db():
                 code TEXT UNIQUE NOT NULL,
                 amount INTEGER NOT NULL,
                 usage_limit INTEGER NOT NULL,
+                usage_limit_per_user INTEGER DEFAULT 1,
                 used_count INTEGER DEFAULT 0,
                 is_active INTEGER DEFAULT 1,
                 expires_at TEXT,
@@ -312,6 +321,7 @@ def init_db():
                 coupon_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
                 amount INTEGER NOT NULL,
+                times_used INTEGER DEFAULT 1,
                 redeemed_at TEXT,
                 UNIQUE(coupon_id, user_id),
                 FOREIGN KEY(coupon_id) REFERENCES coupons(id) ON DELETE CASCADE
@@ -390,8 +400,15 @@ def create_order(
     require_password: bool = False,
     customer_username: str | None = None,
     customer_password: str | None = None,
+    allow_first_plan: bool = False,
+    cashback_percent: int = 0,
     allow_free: bool = False,
 ) -> int | None:
+    try:
+        amount_total = int(amount_total)
+    except (TypeError, ValueError):
+        return None
+
     if amount_total <= 0 and not allow_free:
         return None
     now = datetime.now()
@@ -405,8 +422,9 @@ def create_order(
             account_mode, customer_email, notes,
             customer_secret_encrypted,
             require_username, require_password,
-            customer_username, customer_password
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            customer_username, customer_password,
+            allow_first_plan, cashback_percent
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         user["user_id"], user["username"], user["first_name"] or "",
         None, title, str(amount_total),
@@ -418,6 +436,8 @@ def create_order(
         1 if require_password else 0,
         customer_username or "",
         customer_password or "",
+        1 if allow_first_plan else 0,
+        max(int(cashback_percent or 0), 0),
     ), return_lastrowid=True)
     # تنظیم ددلاین ۱۵ دقیقه
     await_deadline = (now + timedelta(minutes=PAYMENT_TIMEOUT_MIN)).isoformat(timespec="seconds")
@@ -425,7 +445,20 @@ def create_order(
     return oid
 
 def set_order_status(order_id: int, status: str):
-    db_execute("UPDATE orders SET status=?, updated_at=? WHERE id=?", (status, datetime.now().isoformat(timespec="seconds"), order_id))
+    previous = get_order(order_id)
+    db_execute(
+        "UPDATE orders SET status=?, updated_at=? WHERE id=?",
+        (status, datetime.now().isoformat(timespec="seconds"), order_id),
+    )
+    updated = get_order(order_id)
+    paid_statuses = {"IN_PROGRESS", "READY_TO_DELIVER", "DELIVERED", "COMPLETED"}
+    if (
+        updated
+        and previous
+        and previous.get("status") != updated.get("status")
+        and updated.get("status") in paid_statuses
+    ):
+        apply_order_cashback(order_id)
 
 def set_order_receipt(order_id: int, file_id: str | None, text: str | None):
     db_execute("UPDATE orders SET receipt_file_id=?, receipt_text=?, updated_at=? WHERE id=?",
@@ -451,6 +484,34 @@ def set_order_manager_note(order_id: int, note: str | None):
         "UPDATE orders SET manager_note=?, updated_at=? WHERE id=?",
         (note or "", datetime.now().isoformat(timespec="seconds"), order_id),
     )
+
+
+def apply_order_cashback(order_id: int) -> int:
+    order = get_order(order_id)
+    if not order:
+        return 0
+    try:
+        percent = max(int(order.get("cashback_percent") or 0), 0)
+    except (TypeError, ValueError):
+        percent = 0
+    if percent <= 0:
+        return 0
+    base_amount = int(order.get("amount_total") or order.get("price") or 0)
+    cashback_total = max((base_amount * percent) // 100, 0)
+    already_applied = int(order.get("cashback_applied_amount") or 0)
+    remaining = max(cashback_total - already_applied, 0)
+    if remaining <= 0 or not order.get("user_id"):
+        return 0
+    success = change_wallet(
+        order["user_id"], remaining, "CREDIT", note=f"CASHBACK:ORDER:{order_id}", order_id=order_id
+    )
+    if not success:
+        return 0
+    db_execute(
+        "UPDATE orders SET cashback_applied_amount=?, updated_at=? WHERE id=?",
+        (cashback_total, datetime.now().isoformat(timespec="seconds"), order_id),
+    )
+    return remaining
 
 
 def add_order_manager_message(order_id: int, user_id: int | None, message: str) -> int:
@@ -542,6 +603,19 @@ def user_has_delivered_order(user_id: int) -> bool:
 def list_cart_orders(user_id: int):
     now = datetime.now()
     now_iso = now.isoformat(timespec="seconds")
+
+    # سفارش‌هایی که به‌صورت ناقص (بدون وضعیت) ثبت شده‌اند را به وضعیت «در انتظار پرداخت» برگردان
+    db_execute(
+        """
+        UPDATE orders
+        SET status='AWAITING_PAYMENT', updated_at=?
+        WHERE user_id=?
+          AND (status IS NULL OR TRIM(status)='')
+          AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
+        """,
+        (now_iso, user_id, now_iso),
+    )
+
     rows = db_execute(
         """
         SELECT * FROM orders
@@ -592,17 +666,25 @@ def expire_orders_and_refund():
     return expired
 
 
-def create_coupon(code: str, amount: int, usage_limit: int, expires_at: str | None = None) -> int:
+def create_coupon(
+    code: str,
+    amount: int,
+    usage_limit: int,
+    expires_at: str | None = None,
+    *,
+    usage_limit_per_user: int | None = None,
+) -> int:
     now = datetime.now().isoformat(timespec="seconds")
     normalized = (code or "").strip().upper()
     if not normalized:
         raise ValueError("Coupon code cannot be empty")
+    per_user = 1 if usage_limit_per_user is None else int(usage_limit_per_user)
     return db_execute(
         """
-        INSERT INTO coupons(code, amount, usage_limit, used_count, expires_at, created_at, updated_at, is_active)
-        VALUES(?,?,?,?,?,?,?,?)
+        INSERT INTO coupons(code, amount, usage_limit, usage_limit_per_user, used_count, expires_at, created_at, updated_at, is_active)
+        VALUES(?,?,?,?,?,?,?,?,?)
         """,
-        (normalized, int(amount), int(usage_limit), 0, expires_at, now, now, 1),
+        (normalized, int(amount), int(usage_limit), per_user, 0, expires_at, now, now, 1),
         return_lastrowid=True,
     )
 
@@ -613,6 +695,7 @@ def update_coupon(
     code: str,
     amount: int,
     usage_limit: int,
+    usage_limit_per_user: int,
     expires_at: str | None,
     is_active: bool | int | None = None,
 ) -> bool:
@@ -620,8 +703,15 @@ def update_coupon(
     normalized = (code or "").strip().upper()
     if not normalized:
         return False
-    updates = ["code=?", "amount=?", "usage_limit=?", "expires_at=?", "updated_at=?"]
-    params: list[Any] = [normalized, int(amount), int(usage_limit), expires_at, now]
+    updates = [
+        "code=?",
+        "amount=?",
+        "usage_limit=?",
+        "usage_limit_per_user=?",
+        "expires_at=?",
+        "updated_at=?",
+    ]
+    params: list[Any] = [normalized, int(amount), int(usage_limit), int(usage_limit_per_user), expires_at, now]
     if is_active is not None:
         updates.append("is_active=?")
         params.append(1 if bool(is_active) else 0)
@@ -645,6 +735,10 @@ def set_coupon_active(coupon_id: int, active: bool) -> None:
     )
 
 
+def delete_coupon(coupon_id: int) -> None:
+    db_execute("DELETE FROM coupons WHERE id=?", (coupon_id,))
+
+
 def list_coupons(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     rows = db_execute(
         """
@@ -658,6 +752,7 @@ def list_coupons(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     for row in rows:
         if not row.get("expires_at"):
             row["expires_at"] = None
+        row["usage_limit_per_user"] = int(row.get("usage_limit_per_user") or 1)
         row["is_active"] = bool(int(row.get("is_active") or 0))
     return rows
 
@@ -667,6 +762,7 @@ def get_coupon(coupon_id: int):
     if row:
         if not row.get("expires_at"):
             row["expires_at"] = None
+        row["usage_limit_per_user"] = int(row.get("usage_limit_per_user") or 1)
         row["is_active"] = bool(int(row.get("is_active") or 0))
     return row
 
@@ -674,7 +770,7 @@ def get_coupon(coupon_id: int):
 def list_coupon_redemptions(coupon_id: int) -> list[dict[str, Any]]:
     return db_execute(
         """
-        SELECT user_id, amount, redeemed_at
+        SELECT user_id, amount, redeemed_at, times_used
         FROM coupon_redemptions
         WHERE coupon_id=?
         ORDER BY redeemed_at DESC
@@ -692,6 +788,7 @@ def get_coupon_by_code(code: str):
     if row:
         if not row.get("expires_at"):
             row["expires_at"] = None
+        row["usage_limit_per_user"] = int(row.get("usage_limit_per_user") or 1)
         row["is_active"] = bool(int(row.get("is_active") or 0))
     return row
 
@@ -729,26 +826,35 @@ def redeem_coupon(user_id: int, code: str) -> tuple[bool, dict[str, Any] | None,
         except ValueError:
             pass
 
-    already = db_execute(
-        "SELECT id FROM coupon_redemptions WHERE coupon_id=? AND user_id=?",
+    redemption = db_execute(
+        "SELECT id, times_used FROM coupon_redemptions WHERE coupon_id=? AND user_id=?",
         (coupon["id"], user_id),
         fetchone=True,
     )
-    if already:
-        return False, None, "این کد قبلاً اعمال شده است."
+    per_user_limit = int(coupon.get("usage_limit_per_user") or 1)
+    existing_uses = int(redemption.get("times_used") or 0) if redemption else 0
+    if per_user_limit and existing_uses >= per_user_limit:
+        return False, None, "سقف استفاده شما از این کد تکمیل شده است."
 
     success = change_wallet(user_id, amount, "CREDIT", note=f"COUPON:{coupon['code']}")
     if not success:
         return False, None, "امکان واریز مبلغ کوپن وجود ندارد."
 
     now = datetime.now().isoformat(timespec="seconds")
-    db_execute(
-        """
-        INSERT INTO coupon_redemptions(coupon_id, user_id, amount, redeemed_at)
-        VALUES(?,?,?,?)
-        """,
-        (coupon["id"], user_id, amount, now),
-    )
+    if redemption:
+        new_uses = existing_uses + 1
+        db_execute(
+            "UPDATE coupon_redemptions SET times_used=?, redeemed_at=? WHERE id=?",
+            (new_uses, now, redemption["id"]),
+        )
+    else:
+        db_execute(
+            """
+            INSERT INTO coupon_redemptions(coupon_id, user_id, amount, times_used, redeemed_at)
+            VALUES(?,?,?,?,?)
+            """,
+            (coupon["id"], user_id, amount, 1, now),
+        )
     db_execute(
         "UPDATE coupons SET used_count=used_count+1, updated_at=? WHERE id=?",
         (now, coupon["id"]),
@@ -1257,6 +1363,9 @@ def create_product(
     pre_price: int = 0,
     require_username: bool = False,
     require_password: bool = False,
+    allow_first_plan: bool = False,
+    cashback_enabled: bool = False,
+    cashback_percent: int = 0,
     sort_order: int = 0,
 ) -> int:
     now = datetime.now().isoformat(timespec="seconds")
@@ -1265,9 +1374,10 @@ def create_product(
         INSERT INTO products(
             parent_id, title, description, price, available, is_category, request_only, account_enabled,
             self_available, self_price, pre_available, pre_price, require_username, require_password,
+            allow_first_plan, cashback_enabled, cashback_percent,
             sort_order, created_at, updated_at
         )
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             parent_id,
@@ -1284,6 +1394,9 @@ def create_product(
             max(int(pre_price), 0),
             1 if require_username else 0,
             1 if require_password else 0,
+            1 if allow_first_plan else 0,
+            1 if cashback_enabled else 0,
+            max(int(cashback_percent or 0), 0),
             sort_order,
             now,
             now,
@@ -1309,6 +1422,9 @@ def update_product(
     pre_price: int | None = None,
     require_username: bool | None = None,
     require_password: bool | None = None,
+    allow_first_plan: bool | None = None,
+    cashback_enabled: bool | None = None,
+    cashback_percent: int | None = None,
     sort_order: int | None = None,
 ) -> bool:
     current = get_product(product_id)
@@ -1328,6 +1444,11 @@ def update_product(
         "pre_price": max(int(pre_price), 0) if pre_price is not None else int(current.get("pre_price") or 0),
         "require_username": 1 if (require_username if require_username is not None else current.get("require_username")) else 0,
         "require_password": 1 if (require_password if require_password is not None else current.get("require_password")) else 0,
+        "allow_first_plan": 1 if (allow_first_plan if allow_first_plan is not None else current.get("allow_first_plan")) else 0,
+        "cashback_enabled": 1 if (cashback_enabled if cashback_enabled is not None else current.get("cashback_enabled")) else 0,
+        "cashback_percent": max(int(cashback_percent), 0)
+        if cashback_percent is not None
+        else int(current.get("cashback_percent") or 0),
         "sort_order": sort_order if sort_order is not None else int(current.get("sort_order") or 0),
         "parent_id": parent_id if parent_id is not None else current.get("parent_id"),
     }
@@ -1336,6 +1457,7 @@ def update_product(
         UPDATE products
         SET title=?, description=?, price=?, available=?, is_category=?, request_only=?, account_enabled=?,
             self_available=?, self_price=?, pre_available=?, pre_price=?, require_username=?, require_password=?,
+            allow_first_plan=?, cashback_enabled=?, cashback_percent=?,
             sort_order=?, parent_id=?, updated_at=?
         WHERE id=?
         """,
@@ -1353,6 +1475,9 @@ def update_product(
             fields["pre_price"],
             fields["require_username"],
             fields["require_password"],
+            fields["allow_first_plan"],
+            fields["cashback_enabled"],
+            fields["cashback_percent"],
             fields["sort_order"],
             fields["parent_id"],
             datetime.now().isoformat(timespec="seconds"),

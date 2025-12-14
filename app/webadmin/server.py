@@ -52,6 +52,7 @@ from ..db import (
     add_order_manager_message,
     add_user_manager_message,
     create_coupon,
+    delete_coupon,
     create_product,
     get_product,
     delete_product,
@@ -388,6 +389,12 @@ def create_admin_app() -> FastAPI:
             pre_price = 0
         require_username = form.get("require_username") == "on"
         require_password = form.get("require_password") == "on"
+        allow_first_plan = form.get("allow_first_plan") == "on"
+        cashback_enabled = form.get("cashback_enabled") == "on"
+        try:
+            cashback_percent = int(form.get("cashback_percent") or 0)
+        except ValueError:
+            cashback_percent = 0
 
         if not title:
             _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
@@ -418,6 +425,12 @@ def create_admin_app() -> FastAPI:
             pre_price = 0
             require_username = False
             require_password = False
+            allow_first_plan = False
+            cashback_enabled = False
+            cashback_percent = 0
+            allow_first_plan = False
+            cashback_enabled = False
+            cashback_percent = 0
 
         if has_sort_conflict(
             parent_id=parent_id, is_category=is_category, sort_order=sort_order, exclude_id=None
@@ -476,6 +489,8 @@ def create_admin_app() -> FastAPI:
         pre_available = form.get("pre_available") == "on"
         require_username = form.get("require_username") == "on"
         require_password = form.get("require_password") == "on"
+        allow_first_plan = form.get("allow_first_plan") == "on"
+        cashback_enabled = form.get("cashback_enabled") == "on"
         try:
             self_price = int(form.get("self_price") or 0)
         except ValueError:
@@ -484,6 +499,10 @@ def create_admin_app() -> FastAPI:
             pre_price = int(form.get("pre_price") or 0)
         except ValueError:
             pre_price = 0
+        try:
+            cashback_percent = int(form.get("cashback_percent") or 0)
+        except ValueError:
+            cashback_percent = 0
 
         if not title:
             _flash(request, "نام محصول نمی‌تواند خالی باشد.", "error")
@@ -501,6 +520,9 @@ def create_admin_app() -> FastAPI:
             pre_price = 0
             require_username = False
             require_password = False
+            allow_first_plan = False
+            cashback_enabled = False
+            cashback_percent = 0
         elif parent_id:
             parent = get_product(parent_id)
             if not parent or not parent.get("is_category"):
@@ -539,6 +561,9 @@ def create_admin_app() -> FastAPI:
             pre_price=pre_price,
             require_username=require_username,
             require_password=require_password,
+            allow_first_plan=allow_first_plan,
+            cashback_enabled=cashback_enabled,
+            cashback_percent=cashback_percent,
             sort_order=sort_order,
         )
         if not ok:
@@ -597,6 +622,8 @@ def create_admin_app() -> FastAPI:
             pre_available = form.get(f"pre_available-{pid}") == "on"
             require_username = form.get(f"require_username-{pid}") == "on"
             require_password = form.get(f"require_password-{pid}") == "on"
+            allow_first_plan = form.get(f"allow_first_plan-{pid}") == "on"
+            cashback_enabled = form.get(f"cashback_enabled-{pid}") == "on"
             try:
                 self_price = int(form.get(f"self_price-{pid}") or 0)
             except ValueError:
@@ -605,6 +632,10 @@ def create_admin_app() -> FastAPI:
                 pre_price = int(form.get(f"pre_price-{pid}") or 0)
             except ValueError:
                 pre_price = 0
+            try:
+                cashback_percent = int(form.get(f"cashback_percent-{pid}") or 0)
+            except ValueError:
+                cashback_percent = 0
 
             if not title:
                 _flash(request, f"نام برای ردیف #{pid} خالی است.", "error")
@@ -626,6 +657,9 @@ def create_admin_app() -> FastAPI:
                 pre_price = 0
                 require_username = False
                 require_password = False
+                allow_first_plan = False
+                cashback_enabled = False
+                cashback_percent = 0
             elif parent_id:
                 parent = get_product(parent_id)
                 if not parent or not parent.get("is_category"):
@@ -641,6 +675,9 @@ def create_admin_app() -> FastAPI:
                 pre_price = 0
                 require_username = False
                 require_password = False
+                allow_first_plan = False
+                cashback_enabled = False
+                cashback_percent = 0
 
             signature = (parent_id, is_category, sort_order)
             if signature in seen_orders:
@@ -671,6 +708,9 @@ def create_admin_app() -> FastAPI:
                     pre_price=pre_price,
                     require_username=require_username,
                     require_password=require_password,
+                    allow_first_plan=allow_first_plan,
+                    cashback_enabled=cashback_enabled,
+                    cashback_percent=cashback_percent,
                 )
             )
 
@@ -690,6 +730,9 @@ def create_admin_app() -> FastAPI:
                 pre_price=payload["pre_price"],
                 require_username=payload["require_username"],
                 require_password=payload["require_password"],
+                allow_first_plan=payload["allow_first_plan"],
+                cashback_enabled=payload["cashback_enabled"],
+                cashback_percent=payload["cashback_percent"],
                 sort_order=payload["sort_order"],
             )
 
@@ -1163,6 +1206,10 @@ def create_admin_app() -> FastAPI:
             except (TypeError, ValueError):
                 item["usage_limit"] = 0
             try:
+                item["usage_limit_per_user"] = int(item.get("usage_limit_per_user") or 1)
+            except (TypeError, ValueError):
+                item["usage_limit_per_user"] = 1
+            try:
                 item["used_count"] = int(item.get("used_count") or 0)
             except (TypeError, ValueError):
                 item["used_count"] = 0
@@ -1181,7 +1228,11 @@ def create_admin_app() -> FastAPI:
             item["remaining"] = max(item["usage_limit"] - item["used_count"], 0)
             item["is_active"] = bool(item.get("is_active"))
             redemptions = list_coupon_redemptions(item.get("id")) if item.get("id") else []
-            item["redeemed_users"] = [row.get("user_id") for row in redemptions if row.get("user_id") is not None]
+            item["redeemed_users"] = [
+                {"user_id": row.get("user_id"), "times": int(row.get("times_used") or 0)}
+                for row in redemptions
+                if row.get("user_id") is not None
+            ]
         return _render(
             request,
             "coupons.html",
@@ -1201,10 +1252,11 @@ def create_admin_app() -> FastAPI:
         code: str = Form(""),
         amount: int = Form(...),
         usage_limit: int = Form(...),
+        usage_limit_per_user: int = Form(1),
         expires_on: str = Form(""),
     ):
         try:
-            if amount <= 0 or usage_limit <= 0:
+            if amount <= 0 or usage_limit <= 0 or usage_limit_per_user <= 0:
                 raise ValueError("invalid numbers")
         except Exception:
             _flash(request, "ورودی‌ها معتبر نیستند.", "error")
@@ -1220,7 +1272,13 @@ def create_admin_app() -> FastAPI:
             expires_at = f"{expires_input}T23:59:59"
 
         try:
-            create_coupon(normalized_code, amount, usage_limit, expires_at)
+            create_coupon(
+                normalized_code,
+                amount,
+                usage_limit,
+                expires_at,
+                usage_limit_per_user=usage_limit_per_user,
+            )
         except sqlite3.IntegrityError:
             _flash(request, "این کد قبلاً ثبت شده است.", "error")
         except ValueError:
@@ -1238,6 +1296,7 @@ def create_admin_app() -> FastAPI:
         code: str = Form(...),
         amount: int = Form(...),
         usage_limit: int = Form(...),
+        usage_limit_per_user: int = Form(...),
         expires_on: str = Form(""),
     ):
         coupon = get_coupon(coupon_id)
@@ -1245,7 +1304,7 @@ def create_admin_app() -> FastAPI:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="کوپن یافت نشد")
 
         try:
-            if amount <= 0 or usage_limit <= 0:
+            if amount <= 0 or usage_limit <= 0 or usage_limit_per_user <= 0:
                 raise ValueError
         except Exception:
             _flash(request, "مقادیر وارد شده معتبر نیست.", "error")
@@ -1271,6 +1330,7 @@ def create_admin_app() -> FastAPI:
                 code=normalized_code,
                 amount=amount,
                 usage_limit=usage_limit,
+                usage_limit_per_user=usage_limit_per_user,
                 expires_at=expires_at,
             )
         except sqlite3.IntegrityError:
@@ -1299,6 +1359,40 @@ def create_admin_app() -> FastAPI:
         state_text = "فعال" if not is_active else "غیرفعال"
         _flash(request, f"کوپن {coupon.get('code')} {state_text} شد.")
 
+        return RedirectResponse(request.url_for("coupons_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.get("/coupons/{coupon_id}/redemptions")
+    async def coupon_redemptions_page(
+        request: Request, coupon_id: int, user: str = Depends(_login_required)
+    ):
+        coupon = get_coupon(coupon_id)
+        if not coupon:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="کوپن یافت نشد")
+        redemptions = list_coupon_redemptions(coupon_id)
+        for r in redemptions:
+            r["times_used"] = int(r.get("times_used") or 0)
+        return _render(
+            request,
+            "coupon_redemptions.html",
+            {
+                "title": f"استفاده‌کنندگان {coupon.get('code')}",
+                "coupon": coupon,
+                "redemptions": redemptions,
+                "format_amount": _format_amount,
+                "format_datetime": _format_datetime,
+                "nav": "coupons",
+            },
+        )
+
+    @app.post("/coupons/{coupon_id}/delete")
+    async def coupon_delete(
+        request: Request, coupon_id: int, user: str = Depends(_login_required)
+    ):
+        coupon = get_coupon(coupon_id)
+        if not coupon:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="کوپن یافت نشد")
+        delete_coupon(coupon_id)
+        _flash(request, f"کوپن {coupon.get('code')} حذف شد.")
         return RedirectResponse(request.url_for("coupons_page"), status.HTTP_303_SEE_OTHER)
 
 
