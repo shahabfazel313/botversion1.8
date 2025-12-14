@@ -404,6 +404,11 @@ def create_order(
     cashback_percent: int = 0,
     allow_free: bool = False,
 ) -> int | None:
+    try:
+        amount_total = int(amount_total)
+    except (TypeError, ValueError):
+        return None
+
     if amount_total <= 0 and not allow_free:
         return None
     now = datetime.now()
@@ -661,17 +666,25 @@ def expire_orders_and_refund():
     return expired
 
 
-def create_coupon(code: str, amount: int, usage_limit: int, expires_at: str | None = None) -> int:
+def create_coupon(
+    code: str,
+    amount: int,
+    usage_limit: int,
+    expires_at: str | None = None,
+    *,
+    usage_limit_per_user: int | None = None,
+) -> int:
     now = datetime.now().isoformat(timespec="seconds")
     normalized = (code or "").strip().upper()
     if not normalized:
         raise ValueError("Coupon code cannot be empty")
+    per_user = 1 if usage_limit_per_user is None else int(usage_limit_per_user)
     return db_execute(
         """
-        INSERT INTO coupons(code, amount, usage_limit, used_count, expires_at, created_at, updated_at, is_active)
-        VALUES(?,?,?,?,?,?,?,?)
+        INSERT INTO coupons(code, amount, usage_limit, usage_limit_per_user, used_count, expires_at, created_at, updated_at, is_active)
+        VALUES(?,?,?,?,?,?,?,?,?)
         """,
-        (normalized, int(amount), int(usage_limit), 0, expires_at, now, now, 1),
+        (normalized, int(amount), int(usage_limit), per_user, 0, expires_at, now, now, 1),
         return_lastrowid=True,
     )
 
@@ -682,6 +695,7 @@ def update_coupon(
     code: str,
     amount: int,
     usage_limit: int,
+    usage_limit_per_user: int,
     expires_at: str | None,
     is_active: bool | int | None = None,
 ) -> bool:
@@ -689,8 +703,15 @@ def update_coupon(
     normalized = (code or "").strip().upper()
     if not normalized:
         return False
-    updates = ["code=?", "amount=?", "usage_limit=?", "expires_at=?", "updated_at=?"]
-    params: list[Any] = [normalized, int(amount), int(usage_limit), expires_at, now]
+    updates = [
+        "code=?",
+        "amount=?",
+        "usage_limit=?",
+        "usage_limit_per_user=?",
+        "expires_at=?",
+        "updated_at=?",
+    ]
+    params: list[Any] = [normalized, int(amount), int(usage_limit), int(usage_limit_per_user), expires_at, now]
     if is_active is not None:
         updates.append("is_active=?")
         params.append(1 if bool(is_active) else 0)
@@ -714,6 +735,10 @@ def set_coupon_active(coupon_id: int, active: bool) -> None:
     )
 
 
+def delete_coupon(coupon_id: int) -> None:
+    db_execute("DELETE FROM coupons WHERE id=?", (coupon_id,))
+
+
 def list_coupons(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     rows = db_execute(
         """
@@ -727,6 +752,7 @@ def list_coupons(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     for row in rows:
         if not row.get("expires_at"):
             row["expires_at"] = None
+        row["usage_limit_per_user"] = int(row.get("usage_limit_per_user") or 1)
         row["is_active"] = bool(int(row.get("is_active") or 0))
     return rows
 
@@ -736,6 +762,7 @@ def get_coupon(coupon_id: int):
     if row:
         if not row.get("expires_at"):
             row["expires_at"] = None
+        row["usage_limit_per_user"] = int(row.get("usage_limit_per_user") or 1)
         row["is_active"] = bool(int(row.get("is_active") or 0))
     return row
 
@@ -743,7 +770,7 @@ def get_coupon(coupon_id: int):
 def list_coupon_redemptions(coupon_id: int) -> list[dict[str, Any]]:
     return db_execute(
         """
-        SELECT user_id, amount, redeemed_at
+        SELECT user_id, amount, redeemed_at, times_used
         FROM coupon_redemptions
         WHERE coupon_id=?
         ORDER BY redeemed_at DESC
@@ -761,6 +788,7 @@ def get_coupon_by_code(code: str):
     if row:
         if not row.get("expires_at"):
             row["expires_at"] = None
+        row["usage_limit_per_user"] = int(row.get("usage_limit_per_user") or 1)
         row["is_active"] = bool(int(row.get("is_active") or 0))
     return row
 
@@ -798,26 +826,35 @@ def redeem_coupon(user_id: int, code: str) -> tuple[bool, dict[str, Any] | None,
         except ValueError:
             pass
 
-    already = db_execute(
-        "SELECT id FROM coupon_redemptions WHERE coupon_id=? AND user_id=?",
+    redemption = db_execute(
+        "SELECT id, times_used FROM coupon_redemptions WHERE coupon_id=? AND user_id=?",
         (coupon["id"], user_id),
         fetchone=True,
     )
-    if already:
-        return False, None, "این کد قبلاً اعمال شده است."
+    per_user_limit = int(coupon.get("usage_limit_per_user") or 1)
+    existing_uses = int(redemption.get("times_used") or 0) if redemption else 0
+    if per_user_limit and existing_uses >= per_user_limit:
+        return False, None, "سقف استفاده شما از این کد تکمیل شده است."
 
     success = change_wallet(user_id, amount, "CREDIT", note=f"COUPON:{coupon['code']}")
     if not success:
         return False, None, "امکان واریز مبلغ کوپن وجود ندارد."
 
     now = datetime.now().isoformat(timespec="seconds")
-    db_execute(
-        """
-        INSERT INTO coupon_redemptions(coupon_id, user_id, amount, redeemed_at)
-        VALUES(?,?,?,?)
-        """,
-        (coupon["id"], user_id, amount, now),
-    )
+    if redemption:
+        new_uses = existing_uses + 1
+        db_execute(
+            "UPDATE coupon_redemptions SET times_used=?, redeemed_at=? WHERE id=?",
+            (new_uses, now, redemption["id"]),
+        )
+    else:
+        db_execute(
+            """
+            INSERT INTO coupon_redemptions(coupon_id, user_id, amount, times_used, redeemed_at)
+            VALUES(?,?,?,?,?)
+            """,
+            (coupon["id"], user_id, amount, 1, now),
+        )
     db_execute(
         "UPDATE coupons SET used_count=used_count+1, updated_at=? WHERE id=?",
         (now, coupon["id"]),
