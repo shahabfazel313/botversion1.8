@@ -486,6 +486,18 @@ def change_wallet(user_id: int, delta: int, tx_type: str, note: str = "", order_
     )
     return True
 
+
+def refresh_order_deadline(order_id: int, minutes: int | None = None) -> str:
+    if minutes is None:
+        minutes = PAYMENT_TIMEOUT_MIN
+    now = datetime.now()
+    refreshed_deadline = (now + timedelta(minutes=minutes)).isoformat(timespec="seconds")
+    db_execute(
+        "UPDATE orders SET await_deadline=?, updated_at=? WHERE id=?",
+        (refreshed_deadline, now.isoformat(timespec="seconds"), order_id),
+    )
+    return refreshed_deadline
+
 def create_order(
     user,
     title: str,
@@ -722,56 +734,88 @@ def user_has_delivered_order(user_id: int) -> bool:
     )
     return bool(row)
 
-def list_cart_orders(user_id: int):
+def _normalize_status_for_cart(raw_status: str | None) -> str:
+    status = (raw_status or "").strip()
+    if status in {"", "در انتظار پرداخت"}:
+        return "AWAITING_PAYMENT"
+    return status.upper()
+
+
+def _hydrate_cart_orders(user_id: int, order_id: int | None = None) -> list[dict]:
     now = datetime.now()
     now_iso = now.isoformat(timespec="seconds")
 
-    # سفارش‌هایی که بدون وضعیت معتبر ثبت شده‌اند یا با برچسب فارسی مانده‌اند را به وضعیت استاندارد برگردان
-    db_execute(
-        """
-        UPDATE orders
-        SET status='AWAITING_PAYMENT', updated_at=?
-        WHERE user_id=?
-          AND COALESCE(TRIM(status), '') IN ('', 'در انتظار پرداخت')
-          AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
-        """,
-        (now_iso, user_id, now_iso),
-    )
+    filters = ["user_id=?"]
+    params: list[int | str] = [user_id]
+    if order_id:
+        filters.append("id=?")
+        params.append(order_id)
 
-    rows = db_execute(
-        """
+    candidates = db_execute(
+        f"""
         SELECT * FROM orders
-        WHERE user_id=?
-          AND status='AWAITING_PAYMENT'
+        WHERE {' AND '.join(filters)}
+          AND status NOT IN ('CANCELED','REJECTED','COMPLETED','DELIVERED','EXPIRED')
+        ORDER BY created_at DESC
+        """,
+        tuple(params),
+        fetchall=True,
+    ) or []
+
+    hydrated: list[dict] = []
+    for row in candidates:
+        oid = int(row.get("id"))
+        normalized_status = _normalize_status_for_cart(row.get("status"))
+
+        if normalized_status != row.get("status"):
+            set_order_status(oid, normalized_status)
+            row["status"] = normalized_status
+
+        if normalized_status not in {"AWAITING_PAYMENT", "PENDING_CONFIRM"}:
+            continue
+
+        deadline_raw = (row.get("await_deadline") or "").strip()
+        if not deadline_raw:
+            deadline_raw = refresh_order_deadline(oid)
+            row["await_deadline"] = deadline_raw
+
+        try:
+            expired = bool(deadline_raw and datetime.fromisoformat(deadline_raw) <= now)
+        except ValueError:
+            deadline_raw = refresh_order_deadline(oid)
+            row["await_deadline"] = deadline_raw
+            expired = False
+
+        if expired:
+            set_order_status(oid, "EXPIRED")
+            continue
+
+        hydrated.append(row)
+
+    if not hydrated:
+        return []
+
+    placeholders = ",".join("?" for _ in hydrated)
+    hydrated_ids = [int(o["id"]) for o in hydrated]
+    return db_execute(
+        f"""
+        SELECT * FROM orders
+        WHERE id IN ({placeholders})
           AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
         ORDER BY await_deadline ASC
-    """,
-        (user_id, now_iso),
-        fetchall=True,
-    )
-
-    missing = [o["id"] for o in rows if not (o.get("await_deadline") or "").strip()]
-    if missing:
-        refreshed_deadline = (now + timedelta(minutes=PAYMENT_TIMEOUT_MIN)).isoformat(
-            timespec="seconds"
-        )
-        updated_at = datetime.now().isoformat(timespec="seconds")
-        for oid in missing:
-            db_execute(
-                "UPDATE orders SET await_deadline=?, updated_at=? WHERE id=?",
-                (refreshed_deadline, updated_at, oid),
-            )
-        rows = db_execute(
-            """
-            SELECT * FROM orders
-            WHERE user_id=? AND status='AWAITING_PAYMENT' AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
-            ORDER BY await_deadline ASC
         """,
-            (user_id, now_iso),
-            fetchall=True,
-        )
+        (*hydrated_ids, now_iso),
+        fetchall=True,
+    ) or []
 
-    return rows
+
+def list_cart_orders(user_id: int):
+    return _hydrate_cart_orders(user_id)
+
+
+def get_cart_order(order_id: int, user_id: int):
+    orders = _hydrate_cart_orders(user_id, order_id)
+    return orders[0] if orders else None
 
 def expire_orders_and_refund():
     # سفارش‌های در انتظار پرداخت که ددلاین گذشته
