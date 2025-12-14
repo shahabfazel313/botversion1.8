@@ -4,8 +4,16 @@ from aiogram.types import CallbackQuery, Message
 
 from . import router
 from .channel_gate import ensure_member_for_message
+from .helpers import _notify_admins
 from ..config import CURRENCY
-from ..db import create_order, ensure_user, get_user, set_order_customer_message
+from ..db import (
+    create_order,
+    ensure_user,
+    get_user,
+    set_order_customer_message,
+    set_order_payment_type,
+    set_order_status,
+)
 from ..keyboards import (
     REPLY_BTN_PRODUCTS,
     ik_cart_actions,
@@ -15,6 +23,7 @@ from ..keyboards import (
 )
 from ..products import find_public_product, list_public_children
 from ..states import CatalogStates
+from ..utils import mention
 
 
 def _format_price(amount: int) -> str:
@@ -306,7 +315,25 @@ async def on_request_text(message: Message, state: FSMContext) -> None:
         notes=product.get("description") or "",
         allow_free=True,
     )
+    if not order_id:
+        await message.answer("ثبت درخواست با مشکل مواجه شد. لطفاً دوباره تلاش کنید.", reply_markup=reply_main())
+        await state.clear()
+        return
+
     set_order_customer_message(order_id, message.text or "")
+    set_order_payment_type(order_id, "REQUEST")
+    set_order_status(order_id, "IN_PROGRESS")
+    await _notify_admins(
+        message.bot,
+        "\n".join(
+            [
+                "📨 درخواست جدید ثبت شد.",
+                f"کاربر: {mention(message.from_user)}",
+                f"عنوان: {product.get('title')}",
+                f"توضیحات کاربر: {message.text or '—'}",
+            ]
+        ),
+    )
     await message.answer(
         f"✅ درخواست شما برای «{product.get('title')}» ثبت شد و توسط پشتیبانی بررسی می‌شود.",
         reply_markup=reply_main(),
