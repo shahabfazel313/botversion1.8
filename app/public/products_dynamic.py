@@ -107,9 +107,7 @@ async def _begin_purchase(
         await callback.answer("این گزینه فعلاً موجود نیست.", show_alert=True)
         return
     if price <= 0:
-        await callback.message.answer("قیمت این سرویس هنوز تنظیم نشده است.", reply_markup=reply_main())
-        await callback.answer()
-        return
+        await callback.message.answer("قیمت این سرویس صفر است و به‌صورت رایگان ثبت می‌شود.")
 
     require_username = bool(product.get("require_username"))
     require_password = bool(product.get("require_password"))

@@ -22,6 +22,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from app.db import ensure_order_id_floor
+from app.logging_utils import setup_logging
 
 # ------------------ Config & Globals ------------------
 load_dotenv()
@@ -38,10 +39,7 @@ SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "")
 SLA_HOURS_MIN = int(os.getenv("SLA_HOURS_MIN", "1"))
 SLA_HOURS_MAX = int(os.getenv("SLA_HOURS_MAX", "4"))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s | %(message)s"
-)
+setup_logging()
 
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())

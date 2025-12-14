@@ -8,7 +8,7 @@ from . import router
 from .channel_gate import ensure_member_for_message
 from .helpers import _order_title, _status_fa
 from ..config import CURRENCY, SUPPORT_USERNAME
-from ..db import ensure_user, get_user_stats, list_cart_orders
+from ..db import ensure_user, get_order_payable_amount, get_user_stats, list_cart_orders
 from ..keyboards import (
     REPLY_BTN_CART,
     REPLY_BTN_PRODUCTS,
@@ -55,14 +55,16 @@ async def on_reply_cart(message: Message, state: FSMContext) -> None:
             order.get("notes"),
             order.get("plan_title"),
         )
-        amount = int(order.get("amount_total") or 0)
-        reserved = int(order.get("wallet_reserved_amount") or 0)
-        remaining = max(amount - reserved, 0)
+        payable = get_order_payable_amount(order)
+        reserved = min(int(order.get("wallet_reserved_amount") or 0), payable)
+        remaining = max(payable - reserved, 0)
+        discount = int(order.get("discount_amount") or 0)
         text = (
             f"🧺 سفارش #{order['id']} — <b>{title}</b>\n"
-            f"مبلغ کل: <b>{amount} {CURRENCY}</b>\n"
-            f"از کیف پول رزرو شده: <b>{reserved} {CURRENCY}</b>\n"
-            f"باقیمانده برای پرداخت کارت: <b>{remaining} {CURRENCY}</b>\n"
+            f"مبلغ کل: <b>{payable} {CURRENCY}</b>\n"
+            + (f"تخفیف اعمال‌شده: <b>{discount} {CURRENCY}</b>\n" if discount else "")
+            + f"از کیف پول رزرو شده: <b>{reserved} {CURRENCY}</b>\n"
+            + f"باقیمانده برای پرداخت کارت: <b>{remaining} {CURRENCY}</b>\n"
             f"وضعیت: <b>{_status_fa(order['status'])}</b>{ttl}"
         )
         enable_plan = bool(order.get("allow_first_plan")) or order.get("service_category") == "AI"

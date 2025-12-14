@@ -8,8 +8,10 @@ from .db import init_db, expire_orders_and_refund
 from .products import seed_default_catalog
 from .public import router as public_router
 from .admin import router as admin_router
+from .logging_utils import setup_logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
+
+setup_logging()
 
 async def setup_bot_menu(bot: Bot):
     # دستورات (کامندها) که در دکمهٔ Menu نمایش داده می‌شود

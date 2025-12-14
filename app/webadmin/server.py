@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
+import io
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -17,7 +18,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from ..products import get_admin_tree, seed_default_catalog
-from ..config import ADMIN_WEB_PASS, ADMIN_WEB_SECRET, ADMIN_WEB_USER, BOT_TOKEN, CURRENCY
+from ..config import ADMIN_WEB_PASS, ADMIN_WEB_SECRET, ADMIN_WEB_USER, BOT_TOKEN, CURRENCY, LOG_FILE
 from ..db import (
     ORDER_STATUS_LABELS,
     PAYMENT_TYPE_LABELS,
@@ -38,6 +39,13 @@ from ..db import (
     list_wallet_tx_for_order,
     list_wallet_tx_for_user,
     list_service_messages,
+    create_discount,
+    delete_discount,
+    get_discount,
+    list_discounts,
+    list_discount_redemptions,
+    set_discount_active,
+    update_discount,
     count_service_messages,
     get_service_message,
     list_service_message_replies,
@@ -107,6 +115,32 @@ def _format_datetime(value: Any) -> str:
 def _generate_coupon_code(length: int = 8) -> str:
     alphabet = string.ascii_uppercase + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(max(4, length)))
+
+
+def _collect_recent_logs(minutes: int = 5) -> str:
+    base = Path(LOG_FILE)
+    if not base.exists():
+        return "در بازهٔ اخیر لاگی ثبت نشده است."
+
+    cutoff = datetime.now() - timedelta(minutes=minutes)
+    lines: list[str] = []
+    candidates = sorted(base.parent.glob(f"{base.name}*"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+    for file_path in candidates:
+        try:
+            with file_path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    ts = line[:19]
+                    try:
+                        ts_dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        continue
+                    if ts_dt >= cutoff:
+                        lines.append(line.rstrip())
+        except Exception:
+            continue
+
+    return "\n".join(lines) if lines else "در بازهٔ ۵ دقیقهٔ اخیر لاگی موجود نیست."
 
 
 def _flash(request: Request, text: str, category: str = "success") -> None:
@@ -1394,6 +1428,215 @@ def create_admin_app() -> FastAPI:
         delete_coupon(coupon_id)
         _flash(request, f"کوپن {coupon.get('code')} حذف شد.")
         return RedirectResponse(request.url_for("coupons_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.get("/discounts")
+    async def discounts_page(request: Request, user: str = Depends(_login_required)):
+        discounts = list_discounts(limit=200)
+        now_dt = datetime.now()
+        products = [p for p in get_admin_tree() if not p.get("is_category")]
+        for item in discounts:
+            try:
+                item["amount"] = int(item.get("amount") or 0)
+            except (TypeError, ValueError):
+                item["amount"] = 0
+            try:
+                item["usage_limit"] = int(item.get("usage_limit") or 0)
+            except (TypeError, ValueError):
+                item["usage_limit"] = 0
+            try:
+                item["usage_limit_per_user"] = int(item.get("usage_limit_per_user") or 1)
+            except (TypeError, ValueError):
+                item["usage_limit_per_user"] = 1
+            try:
+                item["used_count"] = int(item.get("used_count") or 0)
+            except (TypeError, ValueError):
+                item["used_count"] = 0
+            expires_at = item.get("expires_at")
+            expires_value = ""
+            is_expired = False
+            if expires_at:
+                try:
+                    exp_dt = datetime.fromisoformat(str(expires_at))
+                    is_expired = exp_dt < now_dt
+                    expires_value = exp_dt.strftime("%Y-%m-%d")
+                except ValueError:
+                    expires_value = str(expires_at)[:10]
+            item["expires_value"] = expires_value
+            item["is_expired"] = is_expired
+            item["remaining"] = max(item["usage_limit"] - item["used_count"], 0)
+            item["is_active"] = bool(item.get("is_active"))
+        return _render(
+            request,
+            "discounts.html",
+            {
+                "title": "مدیریت کدهای تخفیف",
+                "discounts": discounts,
+                "products": products,
+                "format_amount": _format_amount,
+                "format_datetime": _format_datetime,
+                "nav": "discounts",
+            },
+        )
+
+    @app.post("/discounts/create")
+    async def discount_create(
+        request: Request,
+        user: str = Depends(_login_required),
+        code: str = Form(""),
+        amount: int = Form(...),
+        usage_limit: int = Form(...),
+        usage_limit_per_user: int = Form(1),
+        applies_all: bool = Form(False),
+        product_ids: list[int] = Form([]),
+        expires_on: str = Form(""),
+    ):
+        try:
+            if amount <= 0 or usage_limit <= 0 or usage_limit_per_user <= 0:
+                raise ValueError("invalid numbers")
+        except Exception:
+            _flash(request, "ورودی‌ها معتبر نیستند.", "error")
+            return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+
+        normalized_code = (code or "").strip().upper() or _generate_coupon_code()
+        expires_at: str | None = None
+        expires_input = (expires_on or "").strip()
+        if expires_input:
+            expires_at = f"{expires_input}T23:59:59"
+
+        try:
+            create_discount(
+                normalized_code,
+                amount,
+                usage_limit,
+                usage_limit_per_user=usage_limit_per_user,
+                applies_all=bool(applies_all),
+                product_ids=[] if applies_all else product_ids,
+                expires_at=expires_at,
+            )
+        except sqlite3.IntegrityError:
+            _flash(request, "این کد تخفیف قبلاً ثبت شده است.", "error")
+        except ValueError:
+            _flash(request, "کد تخفیف معتبر نیست.", "error")
+        else:
+            _flash(request, f"کد تخفیف {normalized_code} ایجاد شد.")
+
+        return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.post("/discounts/{discount_id}/update")
+    async def discount_update(
+        request: Request,
+        discount_id: int,
+        user: str = Depends(_login_required),
+        code: str = Form(...),
+        amount: int = Form(...),
+        usage_limit: int = Form(...),
+        usage_limit_per_user: int = Form(...),
+        applies_all: bool = Form(False),
+        product_ids: list[int] = Form([]),
+        expires_on: str = Form(""),
+        is_active: bool = Form(False),
+    ):
+        discount = get_discount(discount_id)
+        if not discount:
+            _flash(request, "کد یافت نشد.", "error")
+            return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+
+        used_count = int(discount.get("used_count") or 0)
+        if usage_limit < used_count:
+            _flash(request, "ظرفیت نمی‌تواند از تعداد استفاده‌شده کمتر باشد.", "error")
+            return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+
+        expires_at: str | None = None
+        expires_input = (expires_on or "").strip()
+        if expires_input:
+            expires_at = f"{expires_input}T23:59:59"
+
+        success = update_discount(
+            discount_id,
+            code=code,
+            amount=amount,
+            usage_limit=usage_limit,
+            usage_limit_per_user=usage_limit_per_user,
+            applies_all=bool(applies_all),
+            product_ids=[] if applies_all else product_ids,
+            expires_at=expires_at,
+            is_active=is_active,
+        )
+        if success:
+            _flash(request, "بروزرسانی شد.")
+        else:
+            _flash(request, "عدم امکان بروزرسانی کد.", "error")
+        return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.post("/discounts/{discount_id}/toggle")
+    async def discount_toggle(
+        request: Request, discount_id: int, user: str = Depends(_login_required)
+    ):
+        discount = get_discount(discount_id)
+        if not discount:
+            _flash(request, "کد یافت نشد.", "error")
+            return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+        is_active = bool(discount.get("is_active"))
+        set_discount_active(discount_id, not is_active)
+        state_text = "فعال" if not is_active else "غیرفعال"
+        _flash(request, f"کد {discount.get('code')} {state_text} شد.")
+        return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.post("/discounts/{discount_id}/delete")
+    async def discount_delete(
+        request: Request, discount_id: int, user: str = Depends(_login_required)
+    ):
+        discount = get_discount(discount_id)
+        if not discount:
+            _flash(request, "کد یافت نشد.", "error")
+            return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+        delete_discount(discount_id)
+        _flash(request, f"کد {discount.get('code')} حذف شد.")
+        return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+
+    @app.get("/discounts/{discount_id}/redemptions")
+    async def discount_redemptions_page(
+        request: Request, discount_id: int, user: str = Depends(_login_required)
+    ):
+        discount = get_discount(discount_id)
+        if not discount:
+            _flash(request, "کد یافت نشد.", "error")
+            return RedirectResponse(request.url_for("discounts_page"), status.HTTP_303_SEE_OTHER)
+        redemptions = list_discount_redemptions(discount_id)
+        for r in redemptions:
+            r["times_used"] = int(r.get("times_used") or 0)
+        return _render(
+            request,
+            "discount_redemptions.html",
+            {
+                "title": f"استفاده‌کنندگان {discount.get('code')}",
+                "discount": discount,
+                "redemptions": redemptions,
+                "format_datetime": _format_datetime,
+                "nav": "discounts",
+            },
+        )
+
+
+    @app.get("/logs")
+    async def logs_page(request: Request, user: str = Depends(_login_required)):
+        return _render(
+            request,
+            "logs.html",
+            {
+                "title": "لاگ سیستم",
+                "nav": "logs",
+            },
+        )
+
+    @app.get("/logs/download")
+    async def logs_download(request: Request, user: str = Depends(_login_required)):
+        content = _collect_recent_logs()
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="text/plain",
+            headers={"Content-Disposition": "attachment; filename=bot-logs.txt"},
+        )
 
 
     return app
