@@ -726,13 +726,13 @@ def list_cart_orders(user_id: int):
     now = datetime.now()
     now_iso = now.isoformat(timespec="seconds")
 
-    # سفارش‌هایی که به‌صورت ناقص (بدون وضعیت) ثبت شده‌اند را به وضعیت «در انتظار پرداخت» برگردان
+    # سفارش‌هایی که بدون وضعیت معتبر ثبت شده‌اند یا با برچسب فارسی مانده‌اند را به وضعیت استاندارد برگردان
     db_execute(
         """
         UPDATE orders
         SET status='AWAITING_PAYMENT', updated_at=?
         WHERE user_id=?
-          AND (status IS NULL OR TRIM(status)='')
+          AND COALESCE(TRIM(status), '') IN ('', 'در انتظار پرداخت')
           AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
         """,
         (now_iso, user_id, now_iso),
@@ -741,7 +741,9 @@ def list_cart_orders(user_id: int):
     rows = db_execute(
         """
         SELECT * FROM orders
-        WHERE user_id=? AND status='AWAITING_PAYMENT' AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
+        WHERE user_id=?
+          AND status='AWAITING_PAYMENT'
+          AND (await_deadline IS NULL OR await_deadline='' OR await_deadline > ?)
         ORDER BY await_deadline ASC
     """,
         (user_id, now_iso),
