@@ -70,6 +70,8 @@ async def _create_order_and_confirm(
         require_password=bool(product.get("require_password")),
         customer_username=username,
         customer_password=password,
+        allow_first_plan=bool(product.get("allow_first_plan")),
+        cashback_percent=(product.get("cashback_percent") if product.get("cashback_enabled") else 0) or 0,
     )
     if not order_id:
         await message.answer(
