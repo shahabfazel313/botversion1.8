@@ -12,6 +12,7 @@ from ..db import (
     change_wallet,
     get_order,
     get_user,
+    get_cart_order,
     is_user_contact_verified,
     get_order_payable_amount,
     set_order_customer_message,
@@ -38,35 +39,20 @@ from ..utils import mention
 
 
 def _load_payable_order(order_id: int, user_id: int) -> dict | None:
-    order = get_order(order_id)
-    if not order or order.get("user_id") != user_id:
-        return None
-
-    status = (order.get("status") or "").strip()
-    if status in {"", "در انتظار پرداخت"}:
-        set_order_status(order_id, "AWAITING_PAYMENT")
-        order = get_order(order_id)
-        status = (order.get("status") or "") if order else ""
-
-    if not order or order.get("status") != "AWAITING_PAYMENT":
-        return None
-
-    deadline_raw = (order.get("await_deadline") or "").strip()
-    if not deadline_raw:
-        refresh_order_deadline(order_id)
-        order = get_order(order_id)
-        deadline_raw = (order.get("await_deadline") or "").strip() if order else ""
-
+    order = get_cart_order(order_id, user_id)
     if not order:
         return None
 
-    if deadline_raw:
-        try:
-            if datetime.fromisoformat(deadline_raw) <= datetime.now():
-                return None
-        except ValueError:
-            refresh_order_deadline(order_id)
-            order = get_order(order_id)
+    try:
+        deadline_raw = (order.get("await_deadline") or "").strip()
+        if deadline_raw and datetime.fromisoformat(deadline_raw) <= datetime.now():
+            return None
+    except ValueError:
+        refresh_order_deadline(order_id)
+        order = get_cart_order(order_id, user_id)
+
+    if not order or (order.get("status") or "") not in {"AWAITING_PAYMENT", "PENDING_CONFIRM"}:
+        return None
 
     return order
 
