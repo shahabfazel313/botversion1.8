@@ -437,6 +437,25 @@ def init_db():
         )
 
 
+def ensure_user(user_id: int, username: str, first_name: str):
+    now = datetime.now().isoformat(timespec="seconds")
+    row = db_execute("SELECT user_id FROM users WHERE user_id=?", (user_id,), fetchone=True)
+    if not row:
+        db_execute(
+            "INSERT INTO users(user_id, username, first_name, created_at, updated_at) VALUES(?,?,?,?,?)",
+            (user_id, username, first_name or "", now, now),
+        )
+    else:
+        db_execute(
+            "UPDATE users SET username=?, first_name=?, updated_at=? WHERE user_id=?",
+            (username, first_name or "", now, user_id),
+        )
+
+
+def get_user(user_id: int):
+    return db_execute("SELECT * FROM users WHERE user_id=?", (user_id,), fetchone=True)
+
+
 def is_user_contact_verified(user_id: int) -> bool:
     user = get_user(user_id)
     if not user:
@@ -510,7 +529,7 @@ def create_order(
             customer_username, customer_password,
             allow_first_plan, cashback_percent,
             discount_id, discount_code, discount_amount
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         user["user_id"], user["username"], user["first_name"] or "",
         None, title, str(amount_total),
